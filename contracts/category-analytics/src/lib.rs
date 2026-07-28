@@ -10,7 +10,10 @@ mod test;
 pub mod types;
 
 use crate::events::emit_spending_updated;
-use crate::types::{CategorySpend, CategorySpending, DataKey, MonthlyAnalytics, TimeFilter};
+use crate::types::{
+    aggregate_by_category_window, CategorySpend, CategorySpending, CategorySpendWindow, DataKey,
+    MonthlyAnalytics, TimeFilter, TransactionEvent,
+};
 
 #[contract]
 pub struct CategoryAnalytics;
@@ -51,6 +54,30 @@ impl CategoryAnalytics {
         for spending in spendings.iter() {
             record_category_spending(&env, &user, spending.category, spending.amount);
         }
+    }
+
+    pub fn process_events(
+        env: Env,
+        caller: Address,
+        events: Vec<TransactionEvent>,
+    ) {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        if caller != admin {
+            panic!("unauthorized");
+        }
+        for event in events.iter() {
+            record_category_spending(&env, &event.from, event.category.clone(), event.amount);
+        }
+    }
+
+    pub fn spending_by_category_in_window(
+        _env: Env,
+        events: Vec<TransactionEvent>,
+        window_start: u64,
+        window_end: u64,
+    ) -> Vec<CategorySpendWindow> {
+        aggregate_by_category_window(&events, window_start, window_end)
     }
 
     /// Retrieves current aggregate spending for a user and category.

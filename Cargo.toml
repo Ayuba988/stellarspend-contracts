@@ -41,6 +41,8 @@ members = [
     "contracts/rewards",
     "contracts/admin",
     "contracts/penalty",
+    "contracts/transaction-analytics",
+    "contracts/treasury",
 ]
 
 [package]
@@ -103,6 +105,10 @@ path = "tests/throttling_tests.rs"
 name = "throttling_test"
 path = "contracts/tests/throttling_test.rs"
 
+
+[[test]]
+name = "analytics_indexing_tests"
+path = "tests/analytics_indexing_tests.rs"
 
 [[test]]
 name = "timelock_tests"

@@ -21,6 +21,7 @@
 
 mod analytics;
 mod fees;
+pub mod indexer;
 mod types;
 mod validation;
 
@@ -44,6 +45,7 @@ pub use crate::fees::{
 };
 
 // Types exports
+pub use crate::indexer::{CategorySpendWindow, TransactionEvent};
 pub use crate::types::{
     AnalyticsEvents, AuditLog, BatchMetrics, BatchStatusUpdateResult, BundleResult,
     BundledTransaction, CategoryMetrics, DataKey, FeeCalculationResult, FeeConfig,
@@ -1126,6 +1128,55 @@ impl TransactionAnalyticsContract {
         admin.require_auth();
         Self::require_admin(&env, &admin);
         crate::fees::set_fee_paused(&env, &admin, false).expect("Failed to resume fees");
+    }
+
+    pub fn spending_by_category_in_window(
+        _env: Env,
+        events: Vec<indexer::TransactionEvent>,
+        window_start: u64,
+        window_end: u64,
+    ) -> Vec<indexer::CategorySpendWindow> {
+        indexer::aggregate_by_category_window(&events, window_start, window_end)
+    }
+
+    pub fn recategorize_transaction(
+        env: Env,
+        caller: Address,
+        events: Vec<indexer::TransactionEvent>,
+        tx_id: u64,
+        new_category: Symbol,
+    ) -> Vec<indexer::TransactionEvent> {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+        let mut map = indexer::consume_events(&events);
+        if !indexer::recategorize_event(&mut map, tx_id, new_category) {
+            panic_with_error!(&env, AnalyticsError::InvalidBatch);
+        }
+        let mut result: Vec<indexer::TransactionEvent> = Vec::new(&env);
+        for (_, event) in map.iter() {
+            result.push_back(event);
+        }
+        result
+    }
+
+    pub fn recategorize_and_aggregate(
+        env: Env,
+        caller: Address,
+        events: Vec<indexer::TransactionEvent>,
+        tx_id: u64,
+        new_category: Symbol,
+        window_start: u64,
+        window_end: u64,
+    ) -> Vec<indexer::CategorySpendWindow> {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+        let mut map = indexer::consume_events(&events);
+        indexer::recategorize_event(&mut map, tx_id, new_category);
+        let mut updated_events: Vec<indexer::TransactionEvent> = Vec::new(&env);
+        for (_, event) in map.iter() {
+            updated_events.push_back(event);
+        }
+        indexer::aggregate_by_category_window(&updated_events, window_start, window_end)
     }
 
     // Internal helper to verify admin

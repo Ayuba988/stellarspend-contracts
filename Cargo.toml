@@ -1,23 +1,18 @@
 [workspace]
-resolver = "2"
 members = [
     "contracts/balance",
-    "contracts/stellarspend-contracts",
-    "contracts/transaction-analytics",
-    "contracts/contract-upgrade/old_contract",
-    "contracts/contract-upgrade/new_contract",
+
     "contracts/shared",
+    "contracts/transfer",
     "contracts/batch-transfer",
     "contracts/batch-conversion",
     "contracts/batch-rewards",
-    "contracts/batch-payment",
     "contracts/batch-payment-reminders",
     "contracts/batch-wallet-creation",
-    "contracts/budget-recommendations",
-    "contracts/fee",
     "contracts/shared-budgets",
     "contracts/multi-currency-wallet",
     "contracts/spending-limits",
+    "contracts/savings",
     "contracts/savings-goals",
     "contracts/batch-history",
     "contracts/batch-notifications",
@@ -27,8 +22,27 @@ members = [
     "contracts/batch-token-mint",
     "contracts/asset_control",
     "contracts/access-control",
+    "contracts/category-analytics",
+    "contracts/spending-policy",
+    "contracts/spending-categories",
+    "contracts/spending-rules",
+    "contracts/user",
     "contracts/users",
+    "contracts/activity-feed",
+    "contracts/transactional",
     "contracts/transactions",
+    "contracts/transaction-validation",
+    "contracts/merchant-tagging",
+    "contracts/currency-conversion",
+    "contracts/benchmarks",
+    "contracts/zk-verifier",
+    "contracts/pausable",
+    "contracts/allowances",
+    "contracts/rewards",
+    "contracts/admin",
+    "contracts/penalty",
+    "contracts/transaction-analytics",
+    "contracts/treasury",
 ]
 
 [package]
@@ -36,9 +50,20 @@ name = "stellarspend-contracts-tests"
 version = "0.1.0"
 edition = "2021"
 publish = false
+autotests = false
+
+[dependencies]
+# Pin ed25519-dalek to the 2.x line. soroban-env-host 22.1.3 declares
+# `ed25519-dalek = ">=2.0.0"` (no upper bound), so without this pin the
+# resolver selects the newer 3.x release whose `rand_core`/`TryRng` API is
+# incompatible with the `rand_chacha 0.3`/`rand_core 0.6` used by the env-host
+# testutils. This pin unifies the workspace on a compatible 2.x version.
+ed25519-dalek = "2.2"
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+savings = { path = "contracts/savings" }
+savings-goals = { path = "contracts/savings-goals" }
 
 [[test]]
 name = "snapshot_tests"
@@ -48,6 +73,51 @@ path = "tests/snapshot_tests.rs"
 name = "memo_tests"
 path = "tests/memo_tests.rs"
 
+[[test]]
+name = "governance_test"
+path = "contracts/tests/governance_test.rs"
+
+[[test]]
+name = "rate_limit_tests"
+path = "tests/rate_limit_tests.rs"
+
+[[test]]
+name = "concurrent_spending_tests"
+path = "contracts/tests/concurrent_spending_tests.rs"
+
+[[test]]
+name = "storage_key_audit"
+path = "contracts/tests/storage_key_audit.rs"
+
+[[test]]
+name = "savings_goals_test"
+path = "contracts/tests/savings_goals_test.rs"
+
+[[test]]
+name = "governance_tests"
+path = "tests/governance_tests.rs"
+
+[[test]]
+name = "throttling_tests"
+path = "tests/throttling_tests.rs"
+
+[[test]]
+name = "throttling_test"
+path = "contracts/tests/throttling_test.rs"
+
+
+[[test]]
+name = "analytics_indexing_tests"
+path = "tests/analytics_indexing_tests.rs"
+
+[[test]]
+name = "timelock_tests"
+path = "tests/timelock_tests.rs"
+
+[[test]]
+name = "security_e2e_tests"
+path = "tests/security_e2e_tests.rs"
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
@@ -55,7 +125,7 @@ license = "MIT"
 repository = "https://github.com/stellarspend/stellarspend-contracts"
 
 [workspace.dependencies]
-soroban-sdk = "22.0.0"
+soroban-sdk = "=22.0.0"
 shared = { path = "contracts/shared" }
 
 [profile.release]

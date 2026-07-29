@@ -8,7 +8,7 @@ This contract provides a comprehensive RBAC implementation that can be used acro
 
 ## Features
 
-- **Multiple Role Support**: Admin, User, Operator, and Auditor roles
+<!-- - **Multiple Role Support**: Admin, User, Operator, and Auditor roles -->
 - **Hierarchical Permissions**: Admin has super-user privileges
 - **Role Management**: Grant and revoke roles dynamically
 - **Admin Transfer**: Securely transfer admin privileges
@@ -56,6 +56,18 @@ Initialize the contract with an admin address. Can only be called once.
 pub fn grant_role(env: Env, caller: Address, user: Address, role: Role)
 ```
 
+```rust
+pub fn get_user_roles(env: Env, user: Address) -> Map<Role, bool>
+```
+
+Get all roles assigned to a user. Returns an empty `Map` for users with no assigned roles.
+
+```rust
+pub fn has_any_role(env: Env, user: Address) -> bool
+```
+
+Returns `true` when the user has at least one assigned role, otherwise `false`.
+
 Grant a role to a user. Only callable by admin.
 
 ```rust
@@ -71,10 +83,16 @@ pub fn has_role(env: Env, user: Address, role: Role) -> bool
 Check if a user has a specific role.
 
 ```rust
-pub fn get_user_roles(env: Env, user: Address) -> Map<Role, bool>
+pub fn has_any_role(env: Env, user: Address) -> bool
 ```
 
-Get all roles assigned to a user.
+Check if a user has at least one active role.
+
+```rust
+pub fn get_user_roles(env: Env, user: Address) -> soroban_sdk::Vec<Role>
+```
+
+Get a list of all roles assigned to a user.
 
 ### Admin Management
 
@@ -217,6 +235,12 @@ contract.grant_role(&env, &admin, &user, &Role::User);
 
 // Check if user has role
 let has_role = contract.has_role(&env, &user, &Role::User); // true
+
+// Check if user has any role
+let has_any = contract.has_any_role(&env, &user); // true
+
+// Get all roles for user
+let all_roles = contract.get_user_roles(&env, &user); // [Role::User]
 
 // Grant operator role
 let operator = Address::generate(&env);

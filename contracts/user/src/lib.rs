@@ -1,4 +1,15 @@
+//! # Deprecated — use the `users` crate instead
+//!
+//! This crate is a legacy stub that predates the full implementation in
+//! `contracts/users`. It exists for historical reference only and **must not**
+//! receive new features or be depended upon by other contracts.
+//!
+//! See `docs/user-vs-users-crates.md` for the authoritative decision record.
+
 #![no_std]
+
+#[cfg(test)]
+mod test;
 
 use soroban_sdk::{contract, contractimpl, Address, Env, Map};
 
@@ -14,8 +25,11 @@ impl UsersContract {
     pub fn register_user(env: Env, user: Address) {
         user.require_auth();
 
-        let mut users: Map<Address, bool> =
-            env.storage().persistent().get(&USERS_KEY).unwrap_or(Map::new(&env));
+        let mut users: Map<Address, bool> = env
+            .storage()
+            .persistent()
+            .get(&USERS_KEY)
+            .unwrap_or(Map::new(&env));
 
         // Prevent duplicate registration
         if users.contains_key(user.clone()) {
@@ -28,8 +42,11 @@ impl UsersContract {
 
     /// 🔍 Check if a user is already registered
     pub fn user_exists(env: Env, user: Address) -> bool {
-        let users: Map<Address, bool> =
-            env.storage().persistent().get(&USERS_KEY).unwrap_or(Map::new(&env));
+        let users: Map<Address, bool> = env
+            .storage()
+            .persistent()
+            .get(&USERS_KEY)
+            .unwrap_or(Map::new(&env));
 
         users.contains_key(user)
     }

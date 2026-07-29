@@ -1,11 +1,13 @@
 #![cfg(test)]
 
+extern crate std;
+
 use super::*;
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 fn create_contract() -> (Env, Address, Address) {
     let env = Env::default();
-    let contract_id = env.register_contract(None, AccessControlContract);
+    let contract_id = env.register(AccessControlContract, ());
     let client = AccessControlContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
@@ -185,10 +187,75 @@ fn test_get_user_roles() {
     // Get all roles
     let roles = client.get_user_roles(&user);
 
-    assert_eq!(roles.get(Role::User), Some(true));
-    assert_eq!(roles.get(Role::Operator), Some(true));
-    // Admin role was never set for this user, so it returns None
-    assert_eq!(roles.get(Role::Admin), None);
+    assert!(roles.contains(&Role::User));
+    assert!(roles.contains(&Role::Operator));
+    assert!(!roles.contains(&Role::Admin));
+    assert!(!roles.contains(&Role::Auditor));
+    assert_eq!(roles.len(), 2);
+}
+
+#[test]
+fn test_get_user_roles_empty() {
+    let (env, contract_id, _admin) = create_contract();
+    let client = AccessControlContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+    let roles = client.get_user_roles(&user);
+
+    assert_eq!(roles.len(), 0);
+}
+
+#[test]
+fn test_has_any_role() {
+    let (env, contract_id, admin) = create_contract();
+    let client = AccessControlContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+    env.mock_all_auths();
+
+    // Initially should be false
+    assert!(!client.has_any_role(&user));
+
+    // Grant role, should be true
+    client.grant_role(&admin, &user, &Role::User);
+    assert!(client.has_any_role(&user));
+
+    // Revoke role, should be false again
+    client.revoke_role(&admin, &user, &Role::User);
+    assert!(!client.has_any_role(&user));
+}
+
+#[test]
+fn test_get_user_roles_returns_empty_for_user_with_no_roles() {
+    let (env, contract_id, admin) = create_contract();
+    let client = AccessControlContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    let roles = client.get_user_roles(&user);
+
+    assert!(!roles.contains(&Role::Admin));
+    assert!(!roles.contains(&Role::User));
+    assert!(!roles.contains(&Role::Operator));
+    assert!(!roles.contains(&Role::Auditor));
+    assert!(!client.has_any_role(&user));
+}
+
+#[test]
+fn test_has_any_role_returns_true_for_assigned_roles() {
+    let (env, contract_id, admin) = create_contract();
+    let client = AccessControlContractClient::new(&env, &contract_id);
+
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.grant_role(&admin, &user, &Role::Auditor);
+
+    assert!(client.has_any_role(&user));
+    assert!(client.get_user_roles(&user).contains(&Role::Auditor));
 }
 
 #[test]

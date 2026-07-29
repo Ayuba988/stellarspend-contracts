@@ -3,13 +3,11 @@
 mod types;
 mod validation;
 
-use soroban_sdk::{
-    contract, contractimpl, contracttype, panic_with_error, token, Address, Env, Symbol, Vec,
-};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, Symbol, Vec};
 
 pub use crate::types::{
-    Budget, BudgetContribution, BudgetSpendingRule, DataKey, SharedBudgetEvents,
-    MAX_BUDGET_MEMBERS, MAX_SPENDING_RULES,
+    ArchivedBudget, Budget, BudgetContribution, BudgetSpendingRule, BudgetUtilizationBand,
+    BudgetUtilizationSummary, DataKey, SharedBudgetEvents, MAX_BUDGET_MEMBERS, MAX_SPENDING_RULES,
 };
 use crate::validation::{validate_amount, validate_percentage};
 
@@ -43,6 +41,10 @@ pub enum SharedBudgetError {
     TooManyMembers = 12,
     /// Too many spending rules
     TooManyRules = 13,
+    /// Archive retention period must be greater than zero
+    InvalidArchiveRetention = 14,
+    /// Archived budget was not found
+    ArchivedBudgetNotFound = 15,
 }
 
 impl From<SharedBudgetError> for soroban_sdk::Error {
@@ -69,6 +71,9 @@ impl SharedBudgetContract {
         env.storage()
             .instance()
             .set(&DataKey::TotalContributionsProcessed, &0u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::ArchiveRetentionPeriod, &0u64);
     }
 
     /// Creates a new shared budget with specified members and spending rules.
@@ -145,7 +150,13 @@ impl SharedBudgetContract {
     }
 
     /// Contributes to a shared budget.
-    pub fn contribute_to_budget(env: Env, contributor: Address, budget_id: u64, amount: i128) {
+    pub fn contribute_to_budget(
+        env: Env,
+        contributor: Address,
+        budget_id: u64,
+        amount: i128,
+        memo: Option<Symbol>,
+    ) {
         contributor.require_auth();
 
         // Validate amount
@@ -182,6 +193,7 @@ impl SharedBudgetContract {
             budget_id,
             contributor: contributor.clone(),
             amount,
+            memo: memo.clone(),
             timestamp: env.ledger().timestamp(),
         };
 
@@ -196,12 +208,23 @@ impl SharedBudgetContract {
         env.storage()
             .persistent()
             .set(&DataKey::Contribution(contribution_id), &contribution);
+
+        let mut contribution_ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BudgetContributions(budget_id))
+            .unwrap_or_else(|| Vec::new(&env));
+        contribution_ids.push_back(contribution_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BudgetContributions(budget_id), &contribution_ids);
+
         env.storage()
             .instance()
             .set(&DataKey::TotalContributionsProcessed, &contribution_id);
 
         // Emit event
-        SharedBudgetEvents::contribution_added(&env, budget_id, &contributor, amount);
+        SharedBudgetEvents::contribution_added(&env, budget_id, &contributor, amount, memo);
     }
 
     /// Spend from a shared budget with spending rule enforcement.
@@ -263,6 +286,42 @@ impl SharedBudgetContract {
 
         // Emit event
         SharedBudgetEvents::expense_incurred(&env, budget_id, &spender, &recipient, amount);
+    }
+
+    /// Transfers budget ownership from the current owner to a new account.
+    ///
+    /// Both the current owner and the new owner must authorize the transfer.
+    /// After transfer, the previous owner loses owner-level control.
+    pub fn transfer_budget_ownership(
+        env: Env,
+        current_owner: Address,
+        budget_id: u64,
+        new_owner: Address,
+    ) {
+        current_owner.require_auth();
+        new_owner.require_auth();
+
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        if current_owner != budget.creator {
+            panic_with_error!(&env, SharedBudgetError::Unauthorized);
+        }
+
+        if current_owner == new_owner {
+            return;
+        }
+
+        budget.creator = new_owner.clone();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+
+        SharedBudgetEvents::ownership_transferred(&env, budget_id, &current_owner, &new_owner);
     }
 
     /// Add a member to an existing budget.
@@ -345,12 +404,145 @@ impl SharedBudgetContract {
             .set(&DataKey::Budget(budget_id), &budget);
     }
 
+    /// Configures how long inactive budgets remain in active storage before archiving.
+    pub fn set_archive_retention_period(env: Env, caller: Address, retention_seconds: u64) {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+
+        if retention_seconds == 0 {
+            panic_with_error!(&env, SharedBudgetError::InvalidArchiveRetention);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::ArchiveRetentionPeriod, &retention_seconds);
+    }
+
+    /// Returns the configured archive retention period in seconds.
+    pub fn get_archive_retention_period(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::ArchiveRetentionPeriod)
+            .unwrap_or(0)
+    }
+
+    /// Marks a budget inactive so it becomes eligible for scheduled archiving.
+    pub fn deactivate_budget(env: Env, caller: Address, budget_id: u64) {
+        caller.require_auth();
+
+        let mut budget: Budget = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Budget(budget_id))
+            .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound));
+
+        if caller != budget.creator {
+            Self::require_admin(&env, &caller);
+        }
+
+        if !budget.is_active {
+            return;
+        }
+
+        budget.is_active = false;
+        let deactivated_at = env.ledger().timestamp();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Budget(budget_id), &budget);
+        env.storage()
+            .persistent()
+            .set(&DataKey::BudgetDeactivatedAt(budget_id), &deactivated_at);
+
+        SharedBudgetEvents::budget_deactivated(&env, budget_id, &caller, deactivated_at);
+    }
+
+    /// Archives inactive budgets that have exceeded the configured retention period.
+    ///
+    /// Returns the number of budgets archived in this run.
+    pub fn archive_inactive_budgets(env: Env, caller: Address, max_to_archive: u32) -> u32 {
+        caller.require_auth();
+        Self::require_admin(&env, &caller);
+
+        let retention_seconds = Self::get_archive_retention_period(env.clone());
+        if retention_seconds == 0 {
+            panic_with_error!(&env, SharedBudgetError::InvalidArchiveRetention);
+        }
+        if max_to_archive == 0 {
+            return 0;
+        }
+
+        let now = env.ledger().timestamp();
+        let total_budgets = Self::get_total_budgets_created(env.clone());
+        let mut archived = 0u32;
+
+        for budget_id in 1..=total_budgets {
+            if archived >= max_to_archive {
+                break;
+            }
+
+            let budget: Budget = match env.storage().persistent().get(&DataKey::Budget(budget_id)) {
+                Some(budget) => budget,
+                None => continue,
+            };
+
+            if budget.is_active {
+                continue;
+            }
+
+            let deactivated_at = env
+                .storage()
+                .persistent()
+                .get(&DataKey::BudgetDeactivatedAt(budget_id))
+                .unwrap_or(budget.created_at);
+
+            if now < deactivated_at.saturating_add(retention_seconds) {
+                continue;
+            }
+
+            let contribution_ids = env
+                .storage()
+                .persistent()
+                .get(&DataKey::BudgetContributions(budget_id))
+                .unwrap_or_else(|| Vec::new(&env));
+
+            let archived_budget = ArchivedBudget {
+                budget: budget.clone(),
+                deactivated_at,
+                archived_at: now,
+                contribution_ids,
+            };
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::ArchivedBudget(budget_id), &archived_budget);
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Budget(budget_id));
+            env.storage()
+                .persistent()
+                .remove(&DataKey::BudgetDeactivatedAt(budget_id));
+
+            SharedBudgetEvents::budget_archived(&env, budget_id, now);
+            archived += 1;
+        }
+
+        archived
+    }
+
     /// Get budget details.
     pub fn get_budget(env: Env, budget_id: u64) -> Budget {
         env.storage()
             .persistent()
             .get(&DataKey::Budget(budget_id))
             .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::BudgetNotFound))
+    }
+
+    /// Returns an archived budget snapshot, if one exists.
+    pub fn get_archived_budget(env: Env, budget_id: u64) -> Option<ArchivedBudget> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ArchivedBudget(budget_id))
     }
 
     /// Get member status for a budget.
@@ -392,6 +584,22 @@ impl SharedBudgetContract {
     ///
     /// Utilization is the share of contributed funds that have been spent.
     pub fn get_budget_utilization(env: Env, budget_id: u64) -> (u32, i128, i128, i128) {
+        let summary = Self::get_budget_utilization_summary(env, budget_id);
+        (
+            summary.utilization_percent,
+            summary.total_spent,
+            summary.avg_spending_per_member,
+            summary.remaining_balance,
+        )
+    }
+
+    /// Returns the standardized utilization band for a budget.
+    pub fn get_budget_utilization_band(env: Env, budget_id: u64) -> BudgetUtilizationBand {
+        Self::get_budget_utilization_summary(env, budget_id).utilization_band
+    }
+
+    /// Returns budget utilization analytics including the standardized utilization band.
+    pub fn get_budget_utilization_summary(env: Env, budget_id: u64) -> BudgetUtilizationSummary {
         let budget: Budget = env
             .storage()
             .persistent()
@@ -412,12 +620,13 @@ impl SharedBudgetContract {
             0
         };
 
-        (
+        BudgetUtilizationSummary {
             utilization_percent,
             total_spent,
             avg_spending_per_member,
-            budget.balance,
-        )
+            remaining_balance: budget.balance,
+            utilization_band: Self::classify_utilization(utilization_percent),
+        }
     }
 
     /// Get contribution details.
@@ -427,6 +636,54 @@ impl SharedBudgetContract {
             .get(&DataKey::Contribution(contribution_id))
             .unwrap_or_else(|| panic_with_error!(&env, SharedBudgetError::RuleNotFound))
         // Using RuleNotFound as a generic error
+    }
+
+    fn get_budget_contribution_ids(env: &Env, budget_id: u64) -> Vec<u64> {
+        if !env.storage().persistent().has(&DataKey::Budget(budget_id))
+            && !env
+                .storage()
+                .persistent()
+                .has(&DataKey::ArchivedBudget(budget_id))
+        {
+            panic_with_error!(env, SharedBudgetError::BudgetNotFound);
+        }
+
+        env.storage()
+            .persistent()
+            .get(&DataKey::BudgetContributions(budget_id))
+            .unwrap_or_else(|| Vec::new(env))
+    }
+
+    /// Get paginated contributions for a budget.
+    pub fn get_contributions_paginated(
+        env: Env,
+        budget_id: u64,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<BudgetContribution> {
+        let limit = limit.min(100);
+        let contribution_ids = Self::get_budget_contribution_ids(&env, budget_id);
+        let total_count = contribution_ids.len();
+
+        let mut result: Vec<BudgetContribution> = Vec::new(&env);
+        if offset >= total_count || limit == 0 {
+            return result;
+        }
+
+        let end = (offset + limit).min(total_count as u32);
+        for i in offset..end {
+            if let Some(contribution_id) = contribution_ids.get(i) {
+                if let Some(contribution) = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::Contribution(contribution_id))
+                {
+                    result.push_back(contribution);
+                }
+            }
+        }
+
+        result
     }
 
     /// Returns the admin address.
@@ -482,6 +739,15 @@ impl SharedBudgetContract {
         }
     }
 
+    fn classify_utilization(utilization_percent: u32) -> BudgetUtilizationBand {
+        match utilization_percent {
+            0..=24 => BudgetUtilizationBand::Low,
+            25..=49 => BudgetUtilizationBand::Moderate,
+            50..=79 => BudgetUtilizationBand::High,
+            _ => BudgetUtilizationBand::Critical,
+        }
+    }
+
     // Internal helper to verify admin
     fn require_admin(env: &Env, caller: &Address) {
         let admin: Address = env
@@ -493,6 +759,22 @@ impl SharedBudgetContract {
         if *caller != admin {
             panic_with_error!(env, SharedBudgetError::Unauthorized);
         }
+    }
+
+    /// Returns all contributions made to a specific budget, in chronological order.
+    ///
+    /// Returns an empty Vec if the budget exists but has received no contributions.
+    /// Panics with `BudgetNotFound` if the budget does not exist.
+    pub fn get_contributions(env: Env, budget_id: u64) -> Vec<BudgetContribution> {
+        let contribution_ids = Self::get_budget_contribution_ids(&env, budget_id);
+
+        let mut result: Vec<BudgetContribution> = Vec::new(&env);
+        for id in contribution_ids.iter() {
+            if let Some(contrib) = env.storage().persistent().get(&DataKey::Contribution(id)) {
+                result.push_back(contrib);
+            }
+        }
+        result
     }
 }
 

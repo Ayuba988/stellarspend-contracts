@@ -6,13 +6,18 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk.workspace = true
+penalty = { path = "../penalty" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+penalty = { path = "../penalty" }
 
 [profile.release]
 opt-level = "z"

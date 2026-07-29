@@ -1,5 +1,5 @@
-use soroban_sdk::{contracttype, Address, Env, Vec, Symbol, String, panic_with_error};
 use crate::TransactionError;
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, Map, String, Symbol, Vec};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
@@ -27,6 +27,8 @@ pub struct Transaction {
     pub timestamp: u64,
     pub status: TransactionStatus,
     pub tx_type: Symbol,
+    pub is_public: bool,
+    pub metadata: Map<Symbol, String>,
 }
 
 #[derive(Clone)]
@@ -54,19 +56,21 @@ pub fn create_transaction(
     memo: String,
     tags: Vec<String>,
     tx_type: Symbol,
+    is_public: bool,
+    metadata: Map<Symbol, String>,
 ) -> Transaction {
     let tx_id = crate::utils::generate_transaction_id(env);
-    
+
     let mut user_txs: Vec<Symbol> = env
         .storage()
         .persistent()
         .get(&DataKey::UserTransactions(from.clone()))
         .unwrap_or_else(|| Vec::new(env));
-    
+
     if user_txs.len() >= MAX_TRANSACTIONS_PER_USER {
         panic_with_error!(env, TransactionError::TransactionLimitReached);
     }
-    
+
     let transaction = Transaction {
         id: tx_id.clone(),
         from: from.clone(),
@@ -78,13 +82,15 @@ pub fn create_transaction(
         timestamp: env.ledger().timestamp(),
         status: TransactionStatus::Completed,
         tx_type,
+        is_public,
+        metadata,
     };
-    
+
     // Store the transaction
     env.storage()
         .persistent()
         .set(&DataKey::Transaction(tx_id.clone()), &transaction);
-    
+
     // Add to global transaction list
     let mut all_txs: Vec<Symbol> = env
         .storage()
@@ -95,13 +101,13 @@ pub fn create_transaction(
     env.storage()
         .persistent()
         .set(&DataKey::AllTransactions, &all_txs);
-    
+
     // Add to user's transaction list
     user_txs.push_back(tx_id.clone());
     env.storage()
         .persistent()
         .set(&DataKey::UserTransactions(from), &user_txs);
-    
+
     transaction
 }
 
@@ -110,24 +116,25 @@ pub fn update_transaction_amount(env: &Env, id: Symbol, caller: Address, new_amo
     let mut transaction: Transaction = match env
         .storage()
         .persistent()
-        .get(&DataKey::Transaction(id.clone())) {
+        .get(&DataKey::Transaction(id.clone()))
+    {
         Some(tx) => tx,
         None => return false,
     };
-    
+
     if transaction.from != caller {
         return false;
     }
-    
+
     if new_amount < MIN_TRANSACTION_AMOUNT || new_amount > MAX_TRANSACTION_AMOUNT {
         return false;
     }
-    
+
     transaction.amount = new_amount;
     env.storage()
         .persistent()
         .set(&DataKey::Transaction(id), &transaction);
-    
+
     true
 }
 
@@ -141,37 +148,44 @@ pub fn update_transaction_note(env: &Env, id: Symbol, caller: Address, new_note:
     let mut transaction: Transaction = match env
         .storage()
         .persistent()
-        .get(&DataKey::Transaction(id.clone())) {
+        .get(&DataKey::Transaction(id.clone()))
+    {
         Some(tx) => tx,
         None => return false,
     };
-    
+
     // Verify caller is the transaction owner
     if transaction.from != caller {
         return false;
     }
-    
+
     // Update the note
     transaction.note = new_note.clone();
-    
+
     // Store updated transaction
     env.storage()
         .persistent()
         .set(&DataKey::Transaction(id), &transaction);
-    
+
     true
 }
 
 /// Update transaction status (only admin or transaction owner can update)
-pub fn update_transaction_status(env: &Env, id: Symbol, caller: Address, new_status: TransactionStatus) -> bool {
+pub fn update_transaction_status(
+    env: &Env,
+    id: Symbol,
+    caller: Address,
+    new_status: TransactionStatus,
+) -> bool {
     let mut transaction: Transaction = match env
         .storage()
         .persistent()
-        .get(&DataKey::Transaction(id.clone())) {
+        .get(&DataKey::Transaction(id.clone()))
+    {
         Some(tx) => tx,
         None => return false,
     };
-    
+
     // Verify caller is the transaction owner or admin
     if transaction.from != caller {
         // Check if caller is admin
@@ -180,15 +194,15 @@ pub fn update_transaction_status(env: &Env, id: Symbol, caller: Address, new_sta
             return false;
         }
     }
-    
+
     // Update the status
     transaction.status = new_status;
-    
+
     // Store updated transaction
     env.storage()
         .persistent()
         .set(&DataKey::Transaction(id), &transaction);
-    
+
     true
 }
 
@@ -204,19 +218,23 @@ pub fn get_user_transactions(env: &Env, user: Address) -> Vec<Transaction> {
         .persistent()
         .get(&DataKey::UserTransactions(user.clone()))
         .unwrap_or_else(|| Vec::new(env));
-    
+
     let mut transactions = Vec::new(env);
     for tx_id in tx_ids.iter() {
         if let Some(tx) = get_transaction(env, tx_id) {
             transactions.push_back(tx);
         }
     }
-    
+
     transactions
 }
 
 /// Get user transactions filtered by `tx_type` (e.g. `income`, `expense`).
-pub fn get_user_transactions_filtered(env: &Env, user: Address, tx_type: Symbol) -> Vec<Transaction> {
+pub fn get_user_transactions_filtered(
+    env: &Env,
+    user: Address,
+    tx_type: Symbol,
+) -> Vec<Transaction> {
     let transactions = get_user_transactions(env, user);
     let mut filtered = Vec::new(env);
 
@@ -236,14 +254,14 @@ pub fn clear_user_transactions(env: &Env, user: Address) -> bool {
         .persistent()
         .get(&DataKey::UserTransactions(user.clone()))
         .unwrap_or_else(|| Vec::new(env));
-    
+
     // Get current all transactions
-    let mut all_txs: Vec<Symbol> = env
+    let all_txs: Vec<Symbol> = env
         .storage()
         .persistent()
         .get(&DataKey::AllTransactions)
         .unwrap_or_else(|| Vec::new(env));
-    
+
     // Remove all transactions and filter out from all_txs
     let mut new_all_txs = Vec::new(env);
     for all_tx_id in all_txs.iter() {
@@ -262,39 +280,39 @@ pub fn clear_user_transactions(env: &Env, user: Address) -> bool {
             new_all_txs.push_back(all_tx_id);
         }
     }
-    
+
     // Update the global list
     env.storage()
         .persistent()
         .set(&DataKey::AllTransactions, &new_all_txs);
-    
+
     // Clear user's transaction list
     env.storage()
         .persistent()
         .remove(&DataKey::UserTransactions(user));
-    
+
     true
 }
 
 /// Get the last (most recent) transaction for a user
 pub fn get_last_transaction(env: &Env, user: Address) -> Option<Transaction> {
     let transactions = get_user_transactions(env, user);
-    
+
     if transactions.is_empty() {
         return None;
     }
-    
+
     // Find the transaction with the latest timestamp
     let mut latest_tx = None;
     let mut latest_timestamp = 0u64;
-    
+
     for tx in transactions.iter() {
         if tx.timestamp > latest_timestamp {
             latest_timestamp = tx.timestamp;
             latest_tx = Some(tx.clone());
         }
     }
-    
+
     latest_tx
 }
 
@@ -327,7 +345,8 @@ pub fn delete_transaction(env: &Env, id: Symbol) -> bool {
     let transaction: Transaction = match env
         .storage()
         .persistent()
-        .get(&DataKey::Transaction(id.clone())) {
+        .get(&DataKey::Transaction(id.clone()))
+    {
         Some(tx) => tx,
         None => return false,
     };
@@ -352,9 +371,13 @@ pub fn delete_transaction(env: &Env, id: Symbol) -> bool {
     }
 
     if remaining.is_empty() {
-        env.storage().persistent().remove(&DataKey::UserTransactions(owner));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::UserTransactions(owner));
     } else {
-        env.storage().persistent().set(&DataKey::UserTransactions(owner), &remaining);
+        env.storage()
+            .persistent()
+            .set(&DataKey::UserTransactions(owner), &remaining);
     }
 
     true
@@ -365,6 +388,39 @@ pub fn get_transaction_memo(env: &Env, id: Symbol) -> Option<String> {
     get_transaction(env, id).map(|tx| tx.memo)
 }
 
+/// Set metadata key-value pairs for a transaction (only owner can update).
+pub fn set_transaction_metadata(
+    env: &Env,
+    id: Symbol,
+    caller: Address,
+    metadata: Map<Symbol, String>,
+) -> bool {
+    let mut transaction: Transaction = match env
+        .storage()
+        .persistent()
+        .get(&DataKey::Transaction(id.clone()))
+    {
+        Some(tx) => tx,
+        None => return false,
+    };
+
+    if transaction.from != caller {
+        return false;
+    }
+
+    transaction.metadata = metadata;
+    env.storage()
+        .persistent()
+        .set(&DataKey::Transaction(id), &transaction);
+
+    true
+}
+
+/// Get metadata key-value pairs for a transaction.
+pub fn get_transaction_metadata(env: &Env, id: Symbol) -> Option<Map<Symbol, String>> {
+    get_transaction(env, id).map(|tx| tx.metadata)
+}
+
 /// Get all transactions in the contract
 pub fn get_all_transactions(env: &Env) -> Vec<Transaction> {
     let tx_ids: Vec<Symbol> = env
@@ -372,14 +428,14 @@ pub fn get_all_transactions(env: &Env) -> Vec<Transaction> {
         .persistent()
         .get(&DataKey::AllTransactions)
         .unwrap_or_else(|| Vec::new(env));
-    
+
     let mut transactions = Vec::new(env);
     for tx_id in tx_ids.iter() {
         if let Some(tx) = get_transaction(env, tx_id) {
             transactions.push_back(tx);
         }
     }
-    
+
     transactions
 }
 
@@ -388,13 +444,13 @@ pub fn get_total_income(env: &Env) -> i128 {
     let all_txs = get_all_transactions(env);
     let mut total: i128 = 0;
     let income_symbol = Symbol::new(env, "income");
-    
+
     for tx in all_txs.iter() {
         if tx.tx_type == income_symbol {
             total += tx.amount;
         }
     }
-    
+
     total
 }
 
@@ -483,4 +539,3 @@ pub fn is_duplicate_transaction(
 
     false
 }
-

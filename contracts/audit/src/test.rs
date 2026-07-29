@@ -86,7 +86,7 @@ fn test_log_audit_entry() {
     let operation = Symbol::new(&env, "transfer");
     let status = Symbol::new(&env, "success");
     let metadata = None;
-    let metadata_len = 0;
+    let _metadata_len = 0;
 
     // Log an audit entry
     client.log_audit(&actor, &operation, &status, metadata);
@@ -130,7 +130,7 @@ fn test_log_audit_entry_with_metadata() {
     let metadata = Some(metadata_bytes);
 
     // Log an audit entry with metadata
-    client.log_audit(actor, operation, status, metadata);
+    client.log_audit(&actor, &operation, &status, metadata);
 
     // Verify the log was stored correctly with metadata
     let log = client.get_audit_log(&1).unwrap();
@@ -660,4 +660,97 @@ fn test_audit_log_integrity_batch_consistency() {
     assert!(client.verify_audit_immutability(&1, &actor1, &operation));
     assert!(client.verify_audit_immutability(&2, &actor2, &operation));
     assert!(client.verify_audit_immutability(&3, &actor1, &operation));
+}
+
+#[test]
+fn test_get_logs_by_user_empty() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    let unknown = Address::generate(&env);
+    let logs = client.get_logs_by_user(&unknown);
+    assert_eq!(logs.len(), 0);
+}
+
+#[test]
+fn test_get_logs_by_user_returns_only_own_logs() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    let actor_a = Address::generate(&env);
+    let actor_b = Address::generate(&env);
+    let op = Symbol::new(&env, "transfer");
+    let status = Symbol::new(&env, "success");
+
+    client.log_audit(&actor_a, &op, &status, None);
+    client.log_audit(&actor_b, &op, &status, None);
+    client.log_audit(&actor_a, &op, &status, None);
+
+    let logs_a = client.get_logs_by_user(&actor_a);
+    let logs_b = client.get_logs_by_user(&actor_b);
+
+    assert_eq!(logs_a.len(), 2);
+    assert_eq!(logs_b.len(), 1);
+
+    // All returned logs must belong to actor_a
+    for log in logs_a.iter() {
+        assert_eq!(log.actor, actor_a);
+    }
+}
+
+#[test]
+fn test_get_logs_by_range_empty_result() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    // Log at timestamp 1_700_000_000; query a range entirely in the future
+    let actor = Address::generate(&env);
+    client.log_audit(&actor, &Symbol::new(&env, "op"), &Symbol::new(&env, "ok"), None);
+
+    let logs = client.get_logs_by_range(&1_800_000_000, &1_900_000_000);
+    assert_eq!(logs.len(), 0);
+}
+
+#[test]
+fn test_get_logs_by_range_inclusive_bounds() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    let actor = Address::generate(&env);
+    let op = Symbol::new(&env, "op");
+    let status = Symbol::new(&env, "ok");
+
+    // All three logs share timestamp 1_700_000_000 (set in setup_env)
+    client.log_audit(&actor, &op, &status, None);
+    client.log_audit(&actor, &op, &status, None);
+    client.log_audit(&actor, &op, &status, None);
+
+    // Exact match on both bounds
+    let logs = client.get_logs_by_range(&1_700_000_000, &1_700_000_000);
+    assert_eq!(logs.len(), 3);
+}
+
+#[test]
+fn test_get_logs_by_range_no_logs() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    // No logs written at all
+    let logs = client.get_logs_by_range(&0, &9_999_999_999);
+    assert_eq!(logs.len(), 0);
+}
+
+#[test]
+#[should_panic(expected = "start timestamp cannot be greater than end timestamp")]
+fn test_get_logs_by_range_invalid_bounds() {
+    let env = setup_env();
+    let (client, admin) = deploy_contract(&env);
+    client.initialize(&admin, &1000_u32);
+
+    client.get_logs_by_range(&1_700_000_001, &1_700_000_000);
 }

@@ -201,11 +201,42 @@ impl AccessControlContract {
     }
 
     /// Get all roles for a user
-    pub fn get_user_roles(env: Env, user: Address) -> Map<Role, bool> {
-        env.storage()
+    pub fn get_user_roles(env: Env, user: Address) -> soroban_sdk::Vec<Role> {
+        let roles: Map<Role, bool> = env
+            .storage()
             .instance()
             .get(&DataKey::UserRoles(user))
-            .unwrap_or(Map::new(&env))
+            .unwrap_or(Map::new(&env));
+
+        let mut active_roles = soroban_sdk::Vec::new(&env);
+        if roles.get(Role::Admin).unwrap_or(false) {
+            active_roles.push_back(Role::Admin);
+        }
+        if roles.get(Role::User).unwrap_or(false) {
+            active_roles.push_back(Role::User);
+        }
+        if roles.get(Role::Operator).unwrap_or(false) {
+            active_roles.push_back(Role::Operator);
+        }
+        if roles.get(Role::Auditor).unwrap_or(false) {
+            active_roles.push_back(Role::Auditor);
+        }
+
+        active_roles
+    }
+
+    /// Check if a user has any active role
+    pub fn has_any_role(env: Env, user: Address) -> bool {
+        let roles: Map<Role, bool> = env
+            .storage()
+            .instance()
+            .get(&DataKey::UserRoles(user))
+            .unwrap_or(Map::new(&env));
+
+        roles.get(Role::Admin).unwrap_or(false)
+            || roles.get(Role::User).unwrap_or(false)
+            || roles.get(Role::Operator).unwrap_or(false)
+            || roles.get(Role::Auditor).unwrap_or(false)
     }
 
     /// Transfer admin role to a new address (current admin only)

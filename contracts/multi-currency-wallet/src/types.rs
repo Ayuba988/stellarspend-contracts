@@ -100,6 +100,7 @@ pub enum DataKey {
 }
 
 /// Error codes for balance update validation.
+#[allow(non_snake_case)]
 pub mod ErrorCode {
     /// Invalid balance amount (negative or exceeds max)
     pub const INVALID_AMOUNT: u32 = 0;
@@ -113,6 +114,8 @@ pub mod ErrorCode {
     pub const INSUFFICIENT_BALANCE: u32 = 4;
     /// Arithmetic overflow
     pub const ARITHMETIC_OVERFLOW: u32 = 5;
+    /// Currency mismatch between source and destination
+    pub const CURRENCY_MISMATCH: u32 = 6;
 }
 
 /// Events emitted by the multi-currency wallet contract.

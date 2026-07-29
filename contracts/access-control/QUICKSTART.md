@@ -1,7 +1,7 @@
 # Quick Start Guide
 
 Get up and running with RBAC in 5 minutes.
-
+<!-- 
 ## 1. Add to Workspace
 
 Already done! The access-control contract is in `contracts/access-control/`.
@@ -12,7 +12,7 @@ Already done! The access-control contract is in `contracts/access-control/`.
 cargo build -p access-control --target wasm32-unknown-unknown --release
 ```
 
-## 3. Deploy (Example using Stellar CLI)
+## 3. Deploy (Example using Stellar CLI) -->
 
 ```bash
 # Deploy access control contract

@@ -7,13 +7,13 @@ This guide shows how to integrate the Access Control RBAC system into existing S
 Deploy the access control contract separately and reference it from your contracts.
 
 ### Step 1: Deploy Access Control Contract
-
+<!-- 
 ```rust
 // Deploy the access control contract
 let access_control_id = env.register_contract(None, AccessControlContract);
 let access_control = AccessControlContractClient::new(&env, &access_control_id);
 
-// Initialize with admin
+// Initialize with admin -->
 access_control.initialize(&admin);
 ```
 

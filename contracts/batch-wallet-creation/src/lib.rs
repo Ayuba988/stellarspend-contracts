@@ -8,9 +8,10 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Vec};
 
 pub use crate::types::{
     BatchCreateResult, BatchRecoveryResult, DataKey, Wallet, WalletCreateRequest,
-    WalletCreateResult, WalletEvents, WalletRecoveryRequest, WalletRecoveryResult, MAX_BATCH_SIZE,
+    WalletCreateResult, WalletCreatedEvent, WalletEvents, WalletRecoveryRequest,
+    WalletRecoveryResult, MAX_BATCH_SIZE,
 };
-use crate::validation::{validate_address, wallet_exists, check_batch_duplicates};
+use crate::validation::{check_batch_duplicates, validate_address, wallet_exists};
 
 /// Error codes for the batch wallet creation contract.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -77,7 +78,10 @@ impl BatchWalletContract {
         if let Err(duplicate_address) = check_batch_duplicates(&requests) {
             // Emit event or log for debugging purposes
             env.events().publish(
-                (soroban_sdk::symbol_short!("wallet"), soroban_sdk::symbol_short!("duplicate")),
+                (
+                    soroban_sdk::symbol_short!("wallet"),
+                    soroban_sdk::symbol_short!("duplicate"),
+                ),
                 duplicate_address,
             );
             panic_with_error!(&env, BatchWalletError::DuplicateWallet);
@@ -153,7 +157,12 @@ impl BatchWalletContract {
             results.push_back(WalletCreateResult::Success(request.owner.clone()));
             successful_count += 1;
 
-            WalletEvents::wallet_created(&env, batch_id, &request.owner, wallet.id);
+            let wallet_event = WalletCreatedEvent {
+                owner: request.owner.clone(),
+                wallet_id: wallet.id,
+                created_at: wallet.created_at,
+            };
+            WalletEvents::wallet_created(&env, batch_id, &wallet_event);
         }
 
         // Update storage

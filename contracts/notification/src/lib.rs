@@ -3,7 +3,7 @@
 mod types;
 mod errors;
 
-use soroban_sdk::{contract, contractimpl, Env, Vec, String, Address, Symbol};
+use soroban_sdk::{contract, contractimpl, Env, Vec, String, Symbol};
 use types::{Notification, NotificationResult};
 use errors::NotificationError;
 
@@ -61,4 +61,15 @@ impl NotificationContract {
             || lang == &String::from_str("es")
             || lang == &String::from_str("de")
     }
+
+    use crate::notifications::budget_notifier::BudgetNotifier;
+
+pub fn update_budget(env: Env, used: i128, limit: i128) {
+    BudgetNotifier::check_usage(&env, used, limit);
+}
+
+pub fn complete_goal(env: Env) {
+    BudgetNotifier::goal_completed(&env);
+}
+
 }

@@ -1,6 +1,6 @@
 //! Data types and events for batch savings goal operations.
 
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
 /// Maximum number of user-goal pairs in a single batch for optimization.
 pub const MAX_BATCH_SIZE: u32 = 100;
@@ -25,6 +25,28 @@ pub struct SavingsGoalRequest {
     pub deadline: u64,
     /// Initial contribution amount (optional, can be 0)
     pub initial_contribution: i128,
+    /// Goal priority. Higher values are funded first for automatic contributions.
+    pub priority: u32,
+    /// Optional lock duration in seconds (0 = no lock, withdrawals allowed immediately)
+    pub lock_duration_seconds: u64,
+    /// Early withdrawal penalty in basis points (0 = no penalty)
+    pub penalty_bps: u32,
+    /// Expiration duration in seconds (0 = no expiration)
+    pub expiration_seconds: u64,
+}
+
+/// Represents a completion certificate for a savings goal.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct GoalCertificate {
+    /// Associated goal ID
+    pub goal_id: u64,
+    /// User's address
+    pub user: Address,
+    /// Target amount achieved (in stroops)
+    pub target_amount: i128,
+    /// Ledger sequence when certificate was issued
+    pub issued_at: u64,
 }
 
 /// Represents a created savings goal.
@@ -49,6 +71,14 @@ pub struct SavingsGoal {
     pub is_active: bool,
     /// Whether the goal has reached its target amount
     pub is_complete: bool,
+    /// Goal priority. Higher values are funded first for automatic contributions.
+    pub priority: u32,
+    /// Timestamp after which withdrawals are allowed (0 = no lock)
+    pub unlock_at: u64,
+    /// Timestamp after which the goal expires (0 = no expiration)
+    pub expires_at: u64,
+    /// Early withdrawal penalty in basis points (0 = no penalty)
+    pub penalty_bps: u32,
 }
 
 /// Represents progress information for a savings goal.
@@ -65,6 +95,18 @@ pub struct SavingsGoalProgress {
     pub progress_percentage: u32,
     /// Whether the goal is complete
     pub is_complete: bool,
+}
+
+/// Represents a historical snapshot of a savings goal.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct GoalSnapshot {
+    /// Associated goal ID
+    pub goal_id: u64,
+    /// Amount saved at the time of snapshot
+    pub amount: i128,
+    /// Ledger sequence when the snapshot was recorded
+    pub timestamp: u64,
 }
 
 /// Result of processing a single goal creation.
@@ -189,6 +231,23 @@ pub struct BatchMilestoneResult {
     pub metrics: BatchMilestoneMetrics,
 }
 
+/// Reversal window in seconds (24 hours).
+pub const REVERSAL_PERIOD_SECS: u64 = 86_400;
+
+/// A record of a single contribution, stored for reversal eligibility.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct ContributionRecord {
+    /// The contribution amount.
+    pub amount: i128,
+    /// Ledger timestamp when the contribution was made.
+    pub contributed_at: u64,
+    /// Client-supplied idempotency token used to dedupe retries.
+    pub idempotency_token: Bytes,
+    /// Whether this contribution has already been reversed.
+    pub reversed: bool,
+}
+
 /// Storage keys for contract state.
 #[derive(Clone)]
 #[contracttype]
@@ -215,8 +274,32 @@ pub enum DataKey {
     GoalMilestones(u64),
     /// Goal's milestone percentages triggered (goal_id -> Vec<u32>)
     GoalMilestonesPercent(u64),
+    /// Goal prerequisite relationships (goal_id -> Vec<goal_id>)
+    GoalPrereqs(u64),
     /// Total milestones achieved lifetime
     TotalMilestonesAchieved,
+    /// Ledger sequence at which a goal was automatically closed
+    GoalClosedAt(u64),
+    /// Maps (user, goal_name) -> goal_id for duplicate detection
+    GoalByName(Address, Symbol),
+    /// Snapshots for a goal (goal_id -> Vec<GoalSnapshot>)
+    GoalSnapshots(u64),
+    /// Contribution record keyed by (goal_id, contribution sequential index)
+    Contribution(u64, u64),
+    /// Last contribution index per goal
+    LastContribId(u64),
+    /// Idempotency token keyed by (goal owner, goal_id, token) -> contribution_id
+    ContributionIdempotency(Address, u64, Bytes),
+    /// Default alert thresholds applied to goals that do not override them.
+    DefaultDeadlineAlertThresholds,
+    /// Per-goal override for deadline alert thresholds.
+    GoalDeadlineAlertThresholds(u64),
+    /// Tracks which alert thresholds have already fired for a goal.
+    GoalDeadlineAlertSent(u64, u64),
+    /// Certificate for completed goal (goal_id -> GoalCertificate)
+    Certificate(u64),
+    /// Penalty contract address for early-withdrawal fee calculation
+    PenaltyContract,
 }
 
 /// Error codes for goal validation and creation.
@@ -243,6 +326,22 @@ pub mod ErrorCode {
     pub const UNAUTHORIZED_USER: u32 = 8;
     /// Goal has already achieved this milestone
     pub const MILESTONE_ALREADY_ACHIEVED: u32 = 9;
+    /// Goal is closed (target met) and no longer accepts contributions
+    pub const GOAL_CLOSED: u32 = 11;
+    /// Contribution amount is invalid (zero or negative)
+    pub const INVALID_CONTRIBUTION_AMOUNT: u32 = 12;
+    /// Duplicate goal name for the same user
+    pub const DUPLICATE_GOAL_NAME: u32 = 11;
+    /// Goal is locked; withdrawals not yet allowed
+    pub const GOAL_LOCKED: u32 = 12;
+    /// Withdrawal amount exceeds current balance
+    pub const INSUFFICIENT_BALANCE: u32 = 13;
+    /// Invalid withdrawal or contribution amount
+    pub const INVALID_WITHDRAW_AMOUNT: u32 = 14;
+    /// Deadline alert threshold configuration is invalid
+    pub const INVALID_ALERT_THRESHOLD: u32 = 15;
+    /// Contribution retry re-used an existing idempotency token
+    pub const DUPLICATE_CONTRIBUTION_REQUEST: u32 = 16;
 }
 
 /// Events emitted by the savings goals contract.
@@ -311,10 +410,37 @@ impl GoalEvents {
             ),
         );
     }
+
     /// Event emitted when a milestone percentage is achieved automatically.
     pub fn milestone_achieved_percent(env: &Env, goal_id: u64, milestone_percent: u32) {
         let topics = (symbol_short!("milestone"), symbol_short!("auto"), goal_id);
         env.events().publish(topics, (goal_id, milestone_percent));
+    }
+
+    /// Event emitted when a contribution is made to a goal.
+    pub fn goal_contributed(
+        env: &Env,
+        goal_id: u64,
+        user: &Address,
+        amount: i128,
+        new_total: i128,
+    ) {
+        let topics = (symbol_short!("goal"), symbol_short!("contrib"), goal_id);
+        env.events()
+            .publish(topics, (user.clone(), amount, new_total));
+    }
+
+    /// Event emitted when a withdrawal is rejected because the goal is locked.
+    pub fn goal_withdraw_locked(env: &Env, goal_id: u64, user: &Address, unlock_at: u64) {
+        let topics = (symbol_short!("goal"), symbol_short!("wd_lock"), goal_id);
+        env.events().publish(topics, (user.clone(), unlock_at));
+    }
+
+    /// Event emitted when funds are withdrawn from a goal.
+    pub fn goal_withdrawn(env: &Env, goal_id: u64, user: &Address, amount: i128, remaining: i128) {
+        let topics = (symbol_short!("goal"), symbol_short!("withdraw"), goal_id);
+        env.events()
+            .publish(topics, (user.clone(), amount, remaining));
     }
 
     /// Event emitted when milestone achievement fails.
@@ -338,5 +464,82 @@ impl GoalEvents {
         let topics = (symbol_short!("milestone"), symbol_short!("done"));
         env.events()
             .publish(topics, (batch_id, successful, failed, total_percentage));
+    }
+
+    /// Event emitted when a goal is automatically closed because the target amount was reached.
+    pub fn goal_closed(
+        env: &Env,
+        goal_id: u64,
+        user: &Address,
+        final_amount: i128,
+        closed_at: u64,
+    ) {
+        let topics = (symbol_short!("goal"), symbol_short!("closed"), goal_id);
+        env.events()
+            .publish(topics, (goal_id, user.clone(), final_amount, closed_at));
+    }
+    /// Event emitted when a savings goal target is reached (completed).
+    pub fn goal_completed(env: &Env, goal_id: u64, user: &Address, target_amount: i128) {
+        let topics = (
+            symbol_short!("goal"),
+            symbol_short!("completed"),
+            goal_id,
+            user.clone(),
+        );
+        env.events().publish(topics, target_amount);
+    }
+
+    /// Event emitted when a partial withdrawal is made from a goal.
+    pub fn partial_withdrawal(
+        env: &Env,
+        goal_id: u64,
+        user: &Address,
+        amount: i128,
+        remaining: i128,
+    ) {
+        let topics = (symbol_short!("goal"), symbol_short!("withdraw"));
+        env.events()
+            .publish(topics, (goal_id, user.clone(), amount, remaining));
+    }
+
+    /// Event emitted when a goal is renamed.
+    pub fn goal_renamed(env: &Env, goal_id: u64, old_name: &Symbol, new_name: &Symbol) {
+        let topics = (symbol_short!("goal"), symbol_short!("renamed"), goal_id);
+        env.events()
+            .publish(topics, (old_name.clone(), new_name.clone()));
+    }
+
+    /// Event emitted when a snapshot is successfully captured.
+    pub fn goal_snapshot_recorded(env: &Env, goal_id: u64, amount: i128, timestamp: u64) {
+        let topics = (symbol_short!("goal"), symbol_short!("snapshot"), goal_id);
+        env.events().publish(topics, (goal_id, amount, timestamp));
+    }
+
+    /// Event emitted when deadline alert thresholds are configured for a goal.
+    pub fn deadline_alert_thresholds_updated(
+        env: &Env,
+        goal_id: u64,
+        user: &Address,
+        threshold_count: u32,
+    ) {
+        let topics = (symbol_short!("goal"), symbol_short!("al_cfg"), goal_id);
+        env.events()
+            .publish(topics, (user.clone(), threshold_count));
+    }
+
+    /// Event emitted when a goal is approaching its deadline while still underfunded.
+    pub fn deadline_alert(
+        env: &Env,
+        goal_id: u64,
+        user: &Address,
+        threshold: u64,
+        remaining_ledgers: u64,
+        remaining_amount: i128,
+    ) {
+        let topics = (symbol_short!("goal"), symbol_short!("dl_alert"), goal_id);
+        env.events().publish(
+            topics,
+            (user.clone(), threshold, remaining_ledgers, remaining_amount),
+        );
     }
 }

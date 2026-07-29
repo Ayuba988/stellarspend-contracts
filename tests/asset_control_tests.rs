@@ -1,13 +1,20 @@
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events as _},
-    Address, Env,
+    Address, Env, Error, InvokeError,
 };
 
 #[path = "../contracts/asset_control/src/lib.rs"]
 mod asset_control;
 
 use asset_control::{AssetControlContract, AssetControlContractClient, AssetControlError};
+
+fn assert_contract_error<T>(result: Result<T, Result<Error, InvokeError>>, expected: AssetControlError) {
+    match result {
+        Err(Ok(error)) => assert_eq!(error, Error::from_contract_error(expected as u32)),
+        other => panic!("expected contract error {:?}, got {:?}", expected, other),
+    }
+}
 
 fn setup_test_contract() -> (Env, Address, AssetControlContractClient<'static>) {
     let env = Env::default();
@@ -34,15 +41,15 @@ fn test_add_to_blacklist() {
     let (env, admin, client) = setup_test_contract();
 
     let asset = Address::generate(&env);
-    client.add_to_blacklist(&admin, &asset);
+    client.add_to_blacklist(&asset);
 
     assert_eq!(client.is_blacklisted(&asset), true);
 
     // Check event
     let events = env.events().all();
-    assert_eq!(events.len(), 2); // init and add
+    assert_eq!(events.len(), 1);
     assert_eq!(
-        events[1].1,
+        events[0].1,
         (symbol_short!("asset"), symbol_short!("blacklist"))
     );
 }
@@ -52,10 +59,10 @@ fn test_add_already_blacklisted() {
     let (env, admin, client) = setup_test_contract();
 
     let asset = Address::generate(&env);
-    client.add_to_blacklist(&admin, &asset);
+    client.add_to_blacklist(&asset);
 
-    let result = client.try_add_to_blacklist(&admin, &asset);
-    assert_eq!(result, Err(Ok(AssetControlError::AlreadyBlacklisted)));
+    let result = client.try_add_to_blacklist(&asset);
+    assert_contract_error(result, AssetControlError::AlreadyBlacklisted);
 }
 
 #[test]
@@ -63,18 +70,18 @@ fn test_remove_from_blacklist() {
     let (env, admin, client) = setup_test_contract();
 
     let asset = Address::generate(&env);
-    client.add_to_blacklist(&admin, &asset);
+    client.add_to_blacklist(&asset);
     assert_eq!(client.is_blacklisted(&asset), true);
 
-    client.remove_from_blacklist(&admin, &asset);
+    client.remove_from_blacklist(&asset);
     assert_eq!(client.is_blacklisted(&asset), false);
 
     // Check event
     let events = env.events().all();
-    assert_eq!(events.len(), 3); // init, add, remove
+    assert_eq!(events.len(), 2);
     assert_eq!(
-        events[2].1,
-        (symbol_short!("asset"), symbol_short!("unblacklist"))
+        events[1].1,
+        (symbol_short!("asset"), symbol_short!("unblack"))
     );
 }
 
@@ -83,8 +90,8 @@ fn test_remove_not_blacklisted() {
     let (env, admin, client) = setup_test_contract();
 
     let asset = Address::generate(&env);
-    let result = client.try_remove_from_blacklist(&admin, &asset);
-    assert_eq!(result, Err(Ok(AssetControlError::NotBlacklisted)));
+    let result = client.try_remove_from_blacklist(&asset);
+    assert_contract_error(result, AssetControlError::NotBlacklisted);
 }
 
 #[test]
@@ -100,10 +107,10 @@ fn test_check_asset_blacklisted() {
     let (env, admin, client) = setup_test_contract();
 
     let asset = Address::generate(&env);
-    client.add_to_blacklist(&admin, &asset);
+    client.add_to_blacklist(&asset);
 
     let result = client.try_check_asset(&asset);
-    assert_eq!(result, Err(Ok(AssetControlError::Unauthorized)));
+    assert_contract_error(result, AssetControlError::Unauthorized);
 
     // Check event
     let events = env.events().all();
@@ -120,6 +127,6 @@ fn test_unauthorized_add() {
     let unauthorized = Address::generate(&env);
     let asset = Address::generate(&env);
 
-    let result = client.try_add_to_blacklist(&unauthorized, &asset);
-    assert_eq!(result, Err(Ok(AssetControlError::Unauthorized)));
+    let result = client.try_add_to_blacklist(&asset);
+    assert_contract_error(result, AssetControlError::Unauthorized);
 }

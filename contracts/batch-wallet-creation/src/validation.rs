@@ -1,7 +1,7 @@
 //! Validation utilities for batch wallet creation.
 
-use soroban_sdk::{Address, Env, Vec};
 use crate::types::WalletCreateRequest;
+use soroban_sdk::{Address, Env, Vec};
 
 /// Validates an owner address.
 pub fn validate_address(_address: &Address) -> Result<(), ()> {
@@ -18,7 +18,7 @@ pub fn wallet_exists(env: &Env, address: &Address) -> bool {
 }
 
 /// Checks for duplicate wallet creation requests within a batch.
-/// 
+///
 /// # Arguments
 /// * `requests` - The vector of wallet creation requests to check
 ///
@@ -28,10 +28,10 @@ pub fn check_batch_duplicates(requests: &Vec<WalletCreateRequest>) -> Result<(),
     // Simple O(n^2) duplicate check for batch
     for i in 0..requests.len() {
         let request_i = requests.get(i).unwrap();
-        
+
         for j in (i + 1)..requests.len() {
             let request_j = requests.get(j).unwrap();
-            
+
             if request_i.owner == request_j.owner {
                 // Found duplicate - return the duplicate address
                 return Err(request_i.owner.clone());
@@ -39,4 +39,17 @@ pub fn check_batch_duplicates(requests: &Vec<WalletCreateRequest>) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// Returns the first duplicate wallet address found in the batch, or None.
+pub fn find_duplicate_wallet(wallets: &[soroban_sdk::Address]) -> Option<soroban_sdk::Address> {
+    use soroban_sdk::Vec;
+    let mut seen: std::vec::Vec<soroban_sdk::Address> = std::vec::Vec::new();
+    for wallet in wallets {
+        if seen.contains(wallet) {
+            return Some(wallet.clone());
+        }
+        seen.push(wallet.clone());
+    }
+    None
 }

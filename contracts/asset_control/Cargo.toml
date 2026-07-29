@@ -9,4 +9,4 @@ repository.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-soroban-sdk.workspace = true
+soroban-sdk = { workspace = true, features = ["testutils"] }

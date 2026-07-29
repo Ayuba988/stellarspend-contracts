@@ -113,3 +113,108 @@ mod tests {
         assert!(quiz.is_active);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, testutils::Ledger, Env, String};
+
+    fn setup_test_course(env: &Env, instructor: &Address, course_id: u64) -> Course {
+        let course = Course {
+            id: course_id,
+            instructor: instructor.clone(),
+            title: String::from_str(env, "Old Title"),
+            description: String::from_str(env, "Old Description"),
+            category: String::from_str(env, "Old Category"),
+            difficulty: 1,
+            thumbnail: String::from_str(env, "https://old.png"),
+            published: false,
+            created_at: env.ledger().timestamp(),
+            updated_at: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Course(course_id), &course);
+
+        course
+    }
+
+    #[test]
+    fn test_successful_update() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let instructor = Address::generate(&env);
+        let course_id = 1u64;
+        setup_test_course(&env, &instructor, course_id);
+
+        // Advance timestamp to test updated_at change
+        env.ledger().set_timestamp(1_000_000);
+
+        let update_input = UpdateCourseInput {
+            title: Some(String::from_str(&env, "New Title")),
+            description: Some(String::from_str(&env, "New Description")),
+            category: None, // Leave unchanged
+            difficulty: Some(2),
+            thumbnail: None,
+            published: Some(true),
+        };
+
+        let result = update_course(env.clone(), instructor.clone(), course_id, update_input);
+        assert!(result.is_ok());
+
+        let updated_course = result.unwrap();
+        assert_eq!(updated_course.title, String::from_str(&env, "New Title"));
+        assert_eq!(updated_course.description, String::from_str(&env, "New Description"));
+        assert_eq!(updated_course.category, String::from_str(&env, "Old Category"));
+        assert_eq!(updated_course.difficulty, 2);
+        assert_eq!(updated_course.published, true);
+        assert_eq!(updated_course.updated_at, 1_000_000);
+    }
+
+    #[test]
+    fn test_unauthorized_update_rejected() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let instructor = Address::generate(&env);
+        let unauthorized_user = Address::generate(&env);
+        let course_id = 1u64;
+
+        setup_test_course(&env, &instructor, course_id);
+
+        let update_input = UpdateCourseInput {
+            title: Some(String::from_str(&env, "Hacked Title")),
+            description: None,
+            category: None,
+            difficulty: None,
+            thumbnail: None,
+            published: None,
+        };
+
+        let result = update_course(env, unauthorized_user, course_id, update_input);
+        assert_eq!(result, Err(CourseError::Unauthorized));
+    }
+
+    #[test]
+    fn test_non_existent_course_returns_error() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let instructor = Address::generate(&env);
+        let non_existent_course_id = 999u64;
+
+        let update_input = UpdateCourseInput {
+            title: Some(String::from_str(&env, "Title")),
+            description: None,
+            category: None,
+            difficulty: None,
+            thumbnail: None,
+            published: None,
+        };
+
+        let result = update_course(env, instructor, non_existent_course_id, update_input);
+        assert_eq!(result, Err(CourseError::CourseNotFound));
+    }
+}

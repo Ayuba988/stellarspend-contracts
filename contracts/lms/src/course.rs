@@ -42,6 +42,43 @@ pub fn publish_course(env: Env, caller: Address, course_id: u64) -> Result<(), C
         return Err(CourseError::AlreadyPublished);
     }
 
+
+    #[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum CourseError {
+    CourseNotFound = 1,
+    AlreadyPublished = 2,
+    NotAuthorized = 3,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Course {
+    pub id: u64,
+    pub admin: Address,
+    pub title: String,
+    pub description: String,
+    pub published: bool,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+
+/// Retrieves course information by ID.
+///
+/// Returns `Course` struct containing metadata, author, publication status, and timestamps.
+/// Returns `CourseError::CourseNotFound` if the course ID does not exist in storage.
+pub fn get_course(env: Env, course_id: u64) -> Result<Course, CourseError> {
+    let key = StorageKey::Course(course_id);
+
+    env.storage()
+        .instance()
+        .get(&key)
+        .ok_or(CourseError::CourseNotFound)
+}
+
+
     // 3. Toggle published status
     course.published = true;
     env.storage().instance().set(&key, &course);

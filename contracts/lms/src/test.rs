@@ -77,3 +77,52 @@ mod test {
         assert_eq!(result, Err(CourseError::CourseNotFound));
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    #[test]
+    fn test_get_existing_course_success() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let course_id = 42u64;
+        let now = env.ledger().timestamp();
+
+        let course = Course {
+            id: course_id,
+            admin: admin.clone(),
+            title: String::from_str(&env, "Advanced Soroban Smart Contracts"),
+            description: String::from_str(&env, "Master state management and cross-contract calls."),
+            published: true,
+            created_at: now,
+            updated_at: now,
+        };
+
+        // Save course to instance storage using StorageKey
+        let key = StorageKey::Course(course_id);
+        env.storage().instance().set(&key, &course);
+
+        // Retrieve existing course
+        let retrieved = get_course(env.clone(), course_id).expect("Course should be found");
+
+        assert_eq!(retrieved.id, course_id);
+        assert_eq!(retrieved.admin, admin);
+        assert_eq!(retrieved.title, String::from_str(&env, "Advanced Soroban Smart Contracts"));
+        assert!(retrieved.published);
+        assert_eq!(retrieved.created_at, now);
+        assert_eq!(retrieved.updated_at, now);
+    }
+
+    #[test]
+    fn test_get_missing_course_fails() {
+        let env = Env::default();
+        let missing_course_id = 9999u64;
+
+        // Attempting to query non-existent course returns CourseNotFound
+        let result = get_course(env, missing_course_id);
+        assert_eq!(result, Err(CourseError::CourseNotFound));
+    }
+}
+

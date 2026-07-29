@@ -126,3 +126,45 @@ mod test {
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    #[test]
+    fn test_archive_course_and_verify_enrollment_restriction() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let student = Address::generate(&env);
+        let course_id = 100u64;
+        let now = env.ledger().timestamp();
+
+        let course = Course {
+            id: course_id,
+            admin: admin.clone(),
+            title: String::from_str(&env, "Deprecated Stellar Architecture"),
+            description: String::from_str(&env, "Legacy overview."),
+            published: true,
+            archived: false,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let key = StorageKey::Course(course_id);
+        env.storage().instance().set(&key, &course);
+
+        env.mock_all_auths();
+
+        // 1. Archive course successfully
+        let archive_res = archive_course(env.clone(), admin.clone(), course_id);
+        assert!(archive_res.is_ok());
+
+        // 2. Verify course remains intact in storage and state updated
+        let archived_course: Course = env.storage().instance().get(&key).unwrap();
+        assert!(archived_course.archived);
+
+        // 3. Attempting new enrollment fails with CourseIsArchived error
+        let enroll_res = enroll_student(env.clone(), student.clone(), course_id);
+        assert_eq!(enroll_res, Err(CourseError::CourseIsArchived));
+    }
+}

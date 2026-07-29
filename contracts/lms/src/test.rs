@@ -313,3 +313,69 @@ mod test {
         assert_eq!(result, Err(CourseError::InvalidInput));
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Env};
+
+    #[test]
+    fn test_initialize_and_get_admin() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let admin = Address::generate(&env);
+        assert!(initialize_admin(env.clone(), admin.clone()).is_ok());
+
+        assert_eq!(get_admin(&env).unwrap(), admin);
+        assert_eq!(get_role(&env, &admin), Role::Admin);
+
+        // Second initialization must fail
+        assert_eq!(
+            initialize_admin(env.clone(), admin),
+            Err(AdminError::AlreadyInitialized)
+        );
+    }
+
+    #[test]
+    fn test_authorized_role_assignment() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let admin = Address::generate(&env);
+        let instructor = Address::generate(&env);
+        initialize_admin(env.clone(), admin.clone()).unwrap();
+
+        // Admin assigns Instructor role
+        let result = set_role(env.clone(), admin, instructor.clone(), Role::Instructor);
+        assert!(result.is_ok());
+        assert_eq!(get_role(&env, &instructor), Role::Instructor);
+
+        // Instructor passes instructor/admin authorization check
+        assert!(require_instructor_or_admin(&env, &instructor).is_ok());
+    }
+
+    #[test]
+    fn test_unauthorized_action_rejected() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let admin = Address::generate(&env);
+        let student = Address::generate(&env);
+        let target = Address::generate(&env);
+        initialize_admin(env.clone(), admin).unwrap();
+
+        // Default role is Student
+        assert_eq!(get_role(&env, &student), Role::Student);
+
+        // Student attempting to set role must fail
+        let result = set_role(env.clone(), student.clone(), target, Role::Instructor);
+        assert_eq!(result, Err(AdminError::Unauthorized));
+
+        // Student attempting privileged action must fail
+        assert_eq!(
+            require_instructor_or_admin(&env, &student),
+            Err(AdminError::Unauthorized)
+        );
+    }
+}

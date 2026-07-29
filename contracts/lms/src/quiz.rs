@@ -73,15 +73,7 @@ pub fn record_quiz_attempt(
 ) -> Result<QuizAttempt, QuizError> {
     student.require_auth();
 
-    if maximum_score == 0 {
-        return Err(QuizError::InvalidMaximumScore);
-    }
-    if score > maximum_score {
-        return Err(QuizError::ScoreOutOfRange);
-    }
-    if passing_score > maximum_score {
-        return Err(QuizError::InvalidPassingScore);
-    }
+    let passed = evaluate_score(score, maximum_score, passing_score)?;
 
     let key = history_key(&student, quiz_id);
     let mut history: Vec<QuizAttempt> = env
@@ -101,24 +93,59 @@ pub fn record_quiz_attempt(
         score,
         maximum_score,
         passing_score,
-        passed: score >= passing_score,
+        passed,
         timestamp: env.ledger().timestamp(),
     };
 
     history.push_back(attempt.clone());
     env.storage().persistent().set(&key, &history);
 
+    // The outcome lives in the topic, not the payload, so downstream reward and
+    // progress logic can subscribe to passes alone without decoding every
+    // attempt. Filtering on the leading `quiz` topic still yields all attempts.
+    let outcome = if passed {
+        symbol_short!("passed")
+    } else {
+        symbol_short!("failed")
+    };
     env.events().publish(
-        (symbol_short!("quiz"), symbol_short!("attempt"), quiz_id),
+        (symbol_short!("quiz"), outcome, quiz_id),
         (
             student,
             attempt.attempt_number,
             attempt.score,
-            attempt.passed,
+            attempt.passing_score,
         ),
     );
 
     Ok(attempt)
+}
+
+/// Validates a submission and grades it against the required passing score.
+///
+/// This is the single place pass/fail is decided; `record_quiz_attempt` stores
+/// whatever it returns. Grading is inclusive at the threshold — a score exactly
+/// equal to `passing_score` passes.
+///
+/// Returns an error rather than a verdict when the submission could not be
+/// graded meaningfully: a zero `maximum_score`, a `score` above the maximum, or
+/// a `passing_score` above the maximum (which would make the quiz unpassable).
+pub fn evaluate_score(
+    score: u32,
+    maximum_score: u32,
+    passing_score: u32,
+) -> Result<bool, QuizError> {
+    if maximum_score == 0 {
+        return Err(QuizError::InvalidMaximumScore);
+    }
+    if score > maximum_score {
+        return Err(QuizError::ScoreOutOfRange);
+    }
+    if passing_score > maximum_score {
+        return Err(QuizError::InvalidPassingScore);
+    }
+
+    Ok(score >= passing_score)
 }
 
 /// Returns every attempt a learner has made on a quiz, oldest first.
@@ -183,7 +210,7 @@ mod tests {
     use soroban_sdk::{
         contract, contractimpl,
         testutils::{Address as _, Events, Ledger},
-        Env,
+        Env, Symbol, TryFromVal,
     };
 
     const MAX: u32 = 100;
@@ -284,6 +311,14 @@ mod tests {
             self.env
                 .as_contract(&self.id, || has_passed_quiz(&self.env, student, quiz_id))
         }
+
+        /// Second topic of the most recent event — `passed` or `failed`.
+        fn last_outcome_topic(&self) -> Symbol {
+            let events = self.env.events().all();
+            let (_, topics, _) = events.last().expect("an event should have been published");
+            Symbol::try_from_val(&self.env, &topics.get(1).expect("outcome topic"))
+                .expect("outcome topic should be a Symbol")
+        }
     }
 
     #[test]
@@ -362,14 +397,84 @@ mod tests {
     }
 
     #[test]
+    fn a_passing_score_is_marked_passed() {
+        let host = Host::new();
+        let student = host.student();
+
+        // Comfortably above the required 70.
+        let attempt = host.record(&student, 1, 85);
+
+        assert!(attempt.passed);
+        assert_eq!(attempt.passing_score, PASS);
+        assert_eq!(host.attempt(&student, 1, 1).unwrap().passed, true);
+        assert!(host.passed(&student, 1));
+    }
+
+    #[test]
+    fn a_failing_score_is_marked_failed() {
+        let host = Host::new();
+        let student = host.student();
+
+        // Comfortably below the required 70.
+        let attempt = host.record(&student, 1, 45);
+
+        assert!(!attempt.passed);
+        assert_eq!(attempt.passing_score, PASS);
+        assert_eq!(host.attempt(&student, 1, 1).unwrap().passed, false);
+        assert!(!host.passed(&student, 1));
+    }
+
+    #[test]
     fn grades_pass_and_fail_at_the_boundary() {
         let host = Host::new();
         let student = host.student();
 
+        // The threshold itself passes; one point below it does not.
         assert!(!host.record(&student, 1, PASS - 1).passed);
         assert!(host.record(&student, 1, PASS).passed);
         assert!(host.record(&student, 1, MAX).passed);
         assert!(!host.record(&student, 1, 0).passed);
+    }
+
+    #[test]
+    fn evaluate_score_grades_without_recording() {
+        // Failing side of the threshold.
+        assert_eq!(evaluate_score(0, MAX, PASS), Ok(false));
+        assert_eq!(evaluate_score(PASS - 1, MAX, PASS), Ok(false));
+
+        // Passing side, inclusive at the threshold.
+        assert_eq!(evaluate_score(PASS, MAX, PASS), Ok(true));
+        assert_eq!(evaluate_score(MAX, MAX, PASS), Ok(true));
+
+        // A zero threshold passes everything, including a zero score.
+        assert_eq!(evaluate_score(0, MAX, 0), Ok(true));
+
+        // Ungradeable submissions yield an error, not a verdict.
+        assert_eq!(evaluate_score(0, 0, 0), Err(QuizError::InvalidMaximumScore));
+        assert_eq!(
+            evaluate_score(MAX + 1, MAX, PASS),
+            Err(QuizError::ScoreOutOfRange)
+        );
+        assert_eq!(
+            evaluate_score(50, MAX, MAX + 1),
+            Err(QuizError::InvalidPassingScore)
+        );
+    }
+
+    #[test]
+    fn event_topic_carries_the_outcome() {
+        let host = Host::new();
+        let student = host.student();
+
+        host.record(&student, 1, 90);
+        assert_eq!(host.last_outcome_topic(), symbol_short!("passed"));
+
+        host.record(&student, 1, 30);
+        assert_eq!(host.last_outcome_topic(), symbol_short!("failed"));
+
+        // Boundary submissions are announced as passes.
+        host.record(&student, 1, PASS);
+        assert_eq!(host.last_outcome_topic(), symbol_short!("passed"));
     }
 
     #[test]

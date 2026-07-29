@@ -35,3 +35,45 @@ mod test {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{testutils::Address as _, Address, Env, String};
+
+    #[test]
+    fn test_publish_draft_course_success() {
+        let env = Env::default();
+        let admin = Address::generate(&env);
+        let course_id = 1u64;
+
+        let course = Course {
+            id: course_id,
+            admin: admin.clone(),
+            title: String::from_str(&env, "Soroban 101"),
+            published: false,
+        };
+
+        let key = StorageKey::Course(course_id);
+        env.storage().instance().set(&key, &course);
+
+        // Publish course with admin authorization
+        env.mock_all_auths();
+        let result = publish_course(env.clone(), admin.clone(), course_id);
+        assert!(result.is_ok());
+
+        // Verify published state updated
+        let updated: Course = env.storage().instance().get(&key).unwrap();
+        assert!(updated.published);
+    }
+
+    #[test]
+    fn test_publish_invalid_course_fails() {
+        let env = Env::default();
+        let caller = Address::generate(&env);
+
+        env.mock_all_auths();
+        let result = publish_course(env, caller, 999u64);
+        assert_eq!(result, Err(CourseError::CourseNotFound));
+    }
+}

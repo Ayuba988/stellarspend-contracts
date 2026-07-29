@@ -218,3 +218,98 @@ mod test {
         assert_eq!(result, Err(CourseError::CourseNotFound));
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use soroban_sdk::{
+        testutils::{Address as _, Events, Ledger},
+        IntoVal, Env, String,
+    };
+
+    #[test]
+    fn test_create_course_success() {
+        let env = Env::default();
+        env.mock_all_signatures();
+        env.ledger().set_timestamp(500_000);
+
+        let instructor = Address::generate(&env);
+
+        let title = String::from_str(&env, "Introduction to Soroban");
+        let description = String::from_str(&env, "Learn Rust and Stellar smart contracts.");
+        let category = String::from_str(&env, "Blockchain");
+        let thumbnail = String::from_str(&env, "https://example.com/thumb.png");
+
+        let course_id = create_course(
+            env.clone(),
+            instructor.clone(),
+            title.clone(),
+            description.clone(),
+            category.clone(),
+            1,
+            thumbnail.clone(),
+        )
+        .expect("Course creation should succeed");
+
+        assert_eq!(course_id, 1);
+
+        // Verify state persistent storage
+        let stored_course: Course = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Course(course_id))
+            .expect("Course should exist in storage");
+
+        assert_eq!(stored_course.id, 1);
+        assert_eq!(stored_course.instructor, instructor);
+        assert_eq!(stored_course.title, title);
+        assert_eq!(stored_course.created_at, 500_000);
+
+        // Verify Event emission
+        let events = env.events().all();
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn test_create_course_unique_ids() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let instructor = Address::generate(&env);
+        let title = String::from_str(&env, "Course Title");
+        let desc = String::from_str(&env, "Course Description");
+        let cat = String::from_str(&env, "Category");
+        let thumb = String::from_str(&env, "https://example.com/thumb.png");
+
+        let id_1 = create_course(env.clone(), instructor.clone(), title.clone(), desc.clone(), cat.clone(), 1, thumb.clone()).unwrap();
+        let id_2 = create_course(env.clone(), instructor.clone(), title.clone(), desc.clone(), cat.clone(), 2, thumb.clone()).unwrap();
+
+        assert_ne!(id_1, id_2);
+        assert_eq!(id_1, 1);
+        assert_eq!(id_2, 2);
+    }
+
+    #[test]
+    fn test_create_course_invalid_input_rejected() {
+        let env = Env::default();
+        env.mock_all_signatures();
+
+        let instructor = Address::generate(&env);
+        let empty_title = String::from_str(&env, "");
+        let desc = String::from_str(&env, "Valid Description");
+        let cat = String::from_str(&env, "Valid Category");
+        let thumb = String::from_str(&env, "https://example.com/thumb.png");
+
+        let result = create_course(
+            env.clone(),
+            instructor,
+            empty_title,
+            desc,
+            cat,
+            1,
+            thumb,
+        );
+
+        assert_eq!(result, Err(CourseError::InvalidInput));
+    }
+}

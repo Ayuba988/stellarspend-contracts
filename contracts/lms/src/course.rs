@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, Address, Env, String};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Symbol};
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -6,6 +6,7 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, String};
 pub enum CourseError {
     CourseNotFound = 1,
     Unauthorized = 2,
+    InvalidInput = 3,
 }
 
 #[contracttype]
@@ -24,68 +25,66 @@ pub struct Course {
 }
 
 #[contracttype]
-#[derive(Clone, Debug)]
-pub struct UpdateCourseInput {
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub category: Option<String>,
-    pub difficulty: Option<u32>,
-    pub thumbnail: Option<String>,
-    pub published: Option<bool>,
-}
-
-#[contracttype]
 pub enum DataKey {
     Course(u64),
+    NextCourseId,
 }
 
-pub fn update_course(
+/// Helper function to validate non-empty Soroban strings
+fn validate_string(s: &String) -> bool {
+    s.len() > 0
+}
+
+pub fn create_course(
     env: Env,
-    caller: Address,
-    course_id: u64,
-    input: UpdateCourseInput,
-) -> Result<Course, CourseError> {
-    // 1. Verify caller signature
-    caller.require_auth();
+    instructor: Address,
+    title: String,
+    description: String,
+    category: String,
+    difficulty: u32,
+    thumbnail: String,
+) -> Result<u64, CourseError> {
+    // 1. Authorization check
+    instructor.require_auth();
 
-    // 2. Fetch existing course
-    let key = DataKey::Course(course_id);
-    let mut course: Course = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .ok_or(CourseError::CourseNotFound)?;
-
-    // 3. Authorization check (only instructor can update)
-    if course.instructor != caller {
-        return Err(CourseError::Unauthorized);
-    }
-
-    // 4. Update fields if provided
-    if let Some(title) = input.title {
-        course.title = title;
-    }
-    if let Some(description) = input.description {
-        course.description = description;
-    }
-    if let Some(category) = input.category {
-        course.category = category;
-    }
-    if let Some(difficulty) = input.difficulty {
-        course.difficulty = difficulty;
-    }
-    if let Some(thumbnail) = input.thumbnail {
-        course.thumbnail = thumbnail;
-    }
-    if let Some(published) = input.published {
-        course.published = published;
+    // 2. Field validations
+    if !validate_string(&title)
+        || !validate_string(&description)
+        || !validate_string(&category)
+        || !validate_string(&thumbnail)
+    {
+        return Err(CourseError::InvalidInput);
     }
 
-    // 5. Update timestamp
-    course.updated_at = env.ledger().timestamp();
+    // 3. ID Generation (Auto-increment counter)
+    let id_key = DataKey::NextCourseId;
+    let course_id: u64 = env.storage().persistent().get(&id_key).unwrap_or(1);
+    env.storage().persistent().set(&id_key, &(course_id + 1));
 
-    // 6. Persist updated course
-    env.storage().persistent().set(&key, &course);
+    // 4. Construct Course metadata
+    let now = env.ledger().timestamp();
+    let course = Course {
+        id: course_id,
+        instructor: instructor.clone(),
+        title: title.clone(),
+        description,
+        category,
+        difficulty,
+        thumbnail,
+        published: true,
+        created_at: now,
+        updated_at: now,
+    };
 
-    Ok(course)
+    // 5. Store Course metadata
+    let course_key = DataKey::Course(course_id);
+    env.storage().persistent().set(&course_key, &course);
+
+    // 6. Emit Event: topics -> (Symbol("course"), Symbol("created"), course_id), data -> (instructor, title)
+    env.events().publish(
+        (symbol_short!("course"), symbol_short!("created"), course_id),
+        (instructor, title),
+    );
+
+    Ok(course_id)
 }

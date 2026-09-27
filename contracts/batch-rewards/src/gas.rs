@@ -1,4 +1,4 @@
-//! # batch_reward.rs
+//! # gas.rs
 //!
 //! Distributes staking rewards to multiple users in a single contract call.
 //!
@@ -178,6 +178,12 @@ impl BatchRewardContract {
     ///
     /// Useful for off-chain tooling to estimate batch costs before calling
     /// `distribute_rewards`. Returns parallel vec of reward amounts.
+    ///
+    /// # Returns
+    ///
+    /// A vector parallel to `stakers`, where each entry is the reward that
+    /// staker would be credited if `distribute_rewards` ran at this ledger
+    /// time. Entries for stakers with no balance are `0`.
     ///
     /// # Cost
     ///

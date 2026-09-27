@@ -1,4 +1,4 @@
-//! # batch_reward.rs
+//! # decay.rs
 //!
 //! Distributes staking rewards to multiple users in a single contract call.
 //!
@@ -191,6 +191,12 @@ impl BatchRewardContract {
     /// Bonuses are **not** included, so a preview is the accrual component
     /// only. The value grows with elapsed time, so a preview taken now
     /// understates what the same call would credit later.
+    ///
+    /// # Returns
+    ///
+    /// A vector parallel to `stakers`, where each entry is the reward that
+    /// staker would be credited if `distribute_rewards` ran at this ledger
+    /// time. Entries for stakers with no balance are `0`.
     ///
     /// # Panics
     ///

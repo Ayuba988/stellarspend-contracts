@@ -18,7 +18,9 @@ use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
 mod storage;
 #[cfg(test)]
 mod test;
+/// Shared configuration types used by the compliance contract.
 pub mod types;
+/// Input-validation helpers used by the compliance contract.
 pub mod validation;
 
 /// Typed errors returned by the compliance contract.

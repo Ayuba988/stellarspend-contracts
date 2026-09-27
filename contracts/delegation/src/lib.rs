@@ -56,7 +56,7 @@ pub enum DelegationDataKey {
 
 #[contract]
 /// Entry point for the delegation contract.
-pub struct Contract;
+pub struct DelegationContract;
 
 #[contractimpl]
 impl DelegationContract {

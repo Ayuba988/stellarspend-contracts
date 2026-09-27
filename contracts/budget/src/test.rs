@@ -265,4 +265,33 @@ mod tests {
         let result = client.try_initialize(&admin);
         assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
     }
+
+    #[test]
+    fn initialize_then_create_budget_persists_amount() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(Contract, ());
+        let client = ContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+        let cat = category(&env);
+        let asset = xlm(&env);
+
+        client.initialize(&admin);
+
+        let id = client.create_budget(
+            &user,
+            &Symbol::new(&env, "food"),
+            &500_i128,
+            &cat,
+            &asset,
+            &0_u64,
+            &1000_u64,
+        );
+
+        let budgets = client.get_budgets(&user);
+        assert_eq!(budgets.len(), 1);
+        assert_eq!(budgets.get(0).unwrap().budget_id, id);
+        assert_eq!(budgets.get(0).unwrap().amount, 500);
+    }
 }

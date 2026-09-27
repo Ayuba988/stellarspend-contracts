@@ -1,5 +1,9 @@
 #![no_std]
 
+//! Rewards contract: admin-gated configuration plus shared tiered-rate reward
+//! calculation. Every `pub fn` below already carries a `///` doc comment; this
+//! module doc summarises the contract for `cargo doc`.
+
 extern crate alloc;
 
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env, Vec};
@@ -10,7 +14,6 @@ mod test;
 pub mod types;
 pub mod validation;
 
-/// Typed errors for the rewards contract.
 /// Typed errors for the rewards contract.
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

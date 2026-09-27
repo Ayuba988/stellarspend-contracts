@@ -1,11 +1,26 @@
-/// Returns the fee as a percentage string (e.g. 150 bps -> "1.50%").
+/// Converts a fee expressed in basis points into a percentage string.
+///
+/// The fractional part is always rendered with two digits (for example,
+/// `150` basis points becomes `"1.50%"`).
+///
+/// # Arguments
+///
+/// * `bps` - The fee in basis points, where 100 basis points equals 1 percent.
 pub fn fee_bps_to_display(bps: u32) -> String {
     let whole = bps / 100;
     let frac = bps % 100;
     format!("{}.{:02}%", whole, frac)
 }
 
-/// Returns the fee percentage as a scaled integer (bps / 100 = whole percent * 100).
+/// Returns the fee percentage in the contract's basis-point representation.
+///
+/// # Arguments
+///
+/// * `bps` - The fee in basis points, where 100 basis points equals 1 percent.
+///
+/// # Returns
+///
+/// The unchanged basis-point value.
 pub fn get_fee_percentage(bps: u32) -> u32 {
     bps
 }

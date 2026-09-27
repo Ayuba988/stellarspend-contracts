@@ -1,5 +1,9 @@
 #![no_std]
 
+//! Savings contract: internal accounting for per-user, per-asset savings
+//! balances. Every `pub fn` below already carries a `///` doc comment; this
+//! module doc summarises the contract for `cargo doc`.
+
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env, Symbol};
 
 mod storage;
@@ -8,7 +12,6 @@ mod test;
 pub mod types;
 pub mod validation;
 
-/// Typed errors for the savings contract.
 /// Typed errors for the savings contract.
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

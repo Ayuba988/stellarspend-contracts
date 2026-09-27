@@ -1,3 +1,8 @@
+//! Shared validation and formatting helpers for StellarSpend contracts.
+//!
+//! Provides amount/address validation, storage counter helpers and a
+//! deterministic transaction-reference generator reused across contracts.
+
 use alloc::format;
 use soroban_sdk::{Env, String, Symbol};
 

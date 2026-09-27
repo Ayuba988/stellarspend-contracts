@@ -19,7 +19,10 @@ use soroban_sdk::Symbol;
 /// whitelisted assets are processed.
 ///
 /// # Examples
-/// ```
+/// ```rust
+/// use shared::assets::is_supported_asset;
+/// use soroban_sdk::{Env, Symbol};
+///
 /// let env = Env::default();
 /// assert!(is_supported_asset(Symbol::new(&env, "XLM")));
 /// assert!(!is_supported_asset(Symbol::new(&env, "BTC")));

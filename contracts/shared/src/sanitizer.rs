@@ -16,6 +16,10 @@ use alloc::string::String;
 /// Printable characters, whitespace that is not a control character,
 /// and all non-ASCII Unicode are preserved unchanged.
 ///
+/// # Returns
+/// A new [`String`] with the unsafe characters removed. The input is consumed
+/// and is never mutated in place.
+///
 /// # Examples
 /// ```
 /// let clean = sanitize_memo("hello\0world".to_string());

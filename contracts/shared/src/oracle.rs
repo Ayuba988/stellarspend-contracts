@@ -1,3 +1,8 @@
+//! Oracle price-feed abstractions for StellarSpend contracts.
+//!
+//! Defines the [`PriceOracle`] trait so contracts can read asset prices from
+//! different providers without changing their core logic.
+
 extern crate alloc;
 
 use soroban_sdk::{Env, String};
@@ -64,11 +69,17 @@ pub struct Price {
 /// Oracle error types
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OracleError {
+    /// No price is available for the requested asset pair.
     PriceNotFound = 1,
+    /// The latest price is older than the requested staleness threshold.
     PriceStale = 2,
+    /// The price moved further than the allowed deviation in a single update.
     PriceDeviationExceeded = 3,
+    /// The update was rejected because it looked like price manipulation.
     PriceManipulationDetected = 4,
+    /// The configured oracle could not be reached or did not respond.
     OracleUnavailable = 5,
+    /// The asset pair is not supported by the configured oracle.
     InvalidAssetPair = 6,
 }
 

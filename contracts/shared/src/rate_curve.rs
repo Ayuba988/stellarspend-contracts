@@ -12,8 +12,10 @@ use soroban_sdk::contracttype;
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Tier {
+    /// Lower bound (inclusive) at which this tier's rate starts to apply.
     pub threshold: i128,
-    pub rate_bps: u32, // basis points, e.g. 250 = 2.50%
+    /// Rate for this tier in basis points, e.g. `250` = 2.50%.
+    pub rate_bps: u32,
 }
 
 /// Applies a stepped (tiered) rate to `value` and returns the resulting amount.

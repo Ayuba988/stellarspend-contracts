@@ -1,12 +1,23 @@
+//! Shared date and time helpers for StellarSpend contracts.
+//!
+//! Wraps ledger-timestamp arithmetic (durations, expirations and recurring
+//! periods) so contracts do not re-implement overflow-prone math.
+
 use soroban_sdk::Env;
 
 use crate::errors::SharedError;
 
+/// Number of seconds in one minute.
 pub const SECONDS_PER_MINUTE: u64 = 60;
+/// Number of seconds in one hour.
 pub const SECONDS_PER_HOUR: u64 = 3_600;
+/// Number of seconds in one day.
 pub const SECONDS_PER_DAY: u64 = 86_400;
+/// Number of seconds in one week.
 pub const SECONDS_PER_WEEK: u64 = 604_800;
+/// Number of seconds in a 30-day month.
 pub const SECONDS_PER_MONTH: u64 = 2_592_000; // 30 days
+/// Number of seconds in a 365-day year.
 pub const SECONDS_PER_YEAR: u64 = 31_536_000; // 365 days
 
 // ---------------------------------------------------------------------------

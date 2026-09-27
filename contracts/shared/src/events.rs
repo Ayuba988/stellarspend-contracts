@@ -4,6 +4,10 @@
 //! signature so every contract emits events in the same way. Using a
 //! shared helper prevents each contract from duplicating boilerplate and
 //! makes it easy to evolve the event schema in one place.
+//!
+//! Events published through this helper are consumed by the project
+//! indexers/subgraph, so the topic `name` values should stay stable across
+//! releases.
 use soroban_sdk::{Env, Symbol, Val};
 
 /// Emits a standard StellarSpend contract event.

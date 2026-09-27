@@ -1,5 +1,9 @@
 #![no_std]
 
+//! Savings-goals contract: create goals, contribute towards them and manage
+//! the contribution schedule. Every `pub fn` below already carries a `///`
+//! doc comment; this module doc summarises the contract.
+
 use soroban_sdk::{contract, contracterror, contractimpl, symbol_short, Address, Env, Symbol, Vec};
 
 mod storage;
@@ -31,6 +35,8 @@ pub enum Error {
     InvalidRoundUpUnit = 7,
 }
 
+/// On-chain entry point for the savings-goals contract; all supported
+/// operations are exposed as methods on this type.
 #[contract]
 pub struct Contract;
 

@@ -1,3 +1,8 @@
+//! Shared cross-contract error codes for StellarSpend contracts.
+//!
+//! Every [`SharedError`] variant below carries a `///` doc comment explaining
+//! when it is produced.
+
 use soroban_sdk::contracterror;
 
 /// Common cross-contract errors returned by the shared helpers and by

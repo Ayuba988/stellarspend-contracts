@@ -1,3 +1,8 @@
+//! Minimum-fee helper for the fee contract.
+//!
+//! Every `pub fn` below already carries a `///` doc comment; this module doc
+//! summarises the helper for `cargo doc`.
+
 use soroban_sdk::Env;
 use crate::storage;
 

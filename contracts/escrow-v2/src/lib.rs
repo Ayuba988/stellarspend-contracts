@@ -1,5 +1,8 @@
 #![no_std]
 
+//! Escrow-v2 configuration contract. Every `pub fn` below already carries a
+//! `///` doc comment; this module doc summarises the contract for `cargo doc`.
+
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
 
 mod storage;
@@ -20,6 +23,7 @@ pub enum Error {
     InvalidAmount = 3,
 }
 
+/// Escrow-v2 contract entry point.
 #[contract]
 pub struct Contract;
 

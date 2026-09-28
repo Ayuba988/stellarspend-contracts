@@ -49,10 +49,15 @@ pub struct EscrowContract;
 #[contractimpl]
 impl EscrowContract {
 
-    /// Estimates the gas cost of locking `amount` tokens in escrow until `unlock_ts`.
+    /// Locks `amount` tokens from `depositor` in escrow for `beneficiary` until `unlock_ts`.
     ///
-    /// The estimate covers depositor authorization, config lookup, token transfer,
-    /// one packed persistent storage write, and lock event emission.
+    /// Requires depositor authorization, transfers the tokens into this contract,
+    /// writes a single packed [`EscrowEntry`], and emits an escrow-locked event.
+    ///
+    /// # Panics
+    /// - if `amount` is not positive or `unlock_ts` is not in the future
+    /// - if `escrow_id` is already in use for this depositor
+    /// - if the contract has not been initialised
     ///
     /// `escrow_id` is chosen by the depositor — use a monotonic counter
     /// or a hash of (depositor, beneficiary, nonce) off-chain.
@@ -103,11 +108,16 @@ impl EscrowContract {
         });
     }
 
-    /// Estimates the gas cost of releasing escrowed funds after `unlock_ts`.
+    /// Releases escrowed funds to the beneficiary once `unlock_ts` has been reached.
     ///
-    /// The estimate covers one escrow storage read, config lookup, persistent
-    /// storage removal, token transfer to the beneficiary, and release event emission.
+    /// Removes the escrow storage slot (reclaiming ledger rent), transfers the
+    /// locked amount to the beneficiary, and emits an escrow-released event.
     /// Anyone may call this — no auth required (funds go to the beneficiary).
+    ///
+    /// # Panics
+    /// - if no escrow exists for `(depositor, escrow_id)`
+    /// - if the unlock timestamp has not yet been reached
+    /// - if the contract has not been initialised
     pub fn release(env: Env, depositor: Address, escrow_id: u64) {
         let key = EscrowKey::Entry(depositor, escrow_id);
 
@@ -138,7 +148,8 @@ impl EscrowContract {
         });
     }
 
-    /// Estimates the gas cost of reading an escrow entry without modifying state.
+    /// Returns the escrow entry for `(depositor, escrow_id)`, or `None` if it
+    /// does not exist or has already been released. Read-only.
     pub fn get_escrow(env: Env, depositor: Address, escrow_id: u64) -> Option<EscrowEntry> {
         env.storage().persistent()
             .get(&EscrowKey::Entry(depositor, escrow_id))

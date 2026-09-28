@@ -298,3 +298,33 @@ mod tests {
         assert!(client.get_delegation(&owner, &delegate).is_none());
     }
 }
+
+#![cfg(test)]
+
+use super::*;
+author: soroban_sdk::{Env, Address};
+
+#[test]
+fn test_delegation_authorization_and_revocation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Register delegation contract
+    let contract_id = env.register(DelegationContract, ());
+    let client = DelegationContractClient::new(&env, &contract_id);
+
+    let delegator = Address::generate(&env);
+    let delegate = Address::generate(&env);
+
+    // Initialize delegation or set delegate permissions
+    client.set_delegate(&delegator, &delegate, &true);
+
+    // Verify delegate is authorized
+    let is_authorized = client.is_authorized(&delegator, &delegate);
+    assert_eq!(is_authorized, true);
+
+    // Revoke delegation
+    client.set_delegate(&delegator, &delegate, &false);
+    let is_authorized_after = client.is_authorized(&delegator, &delegate);
+    assert_eq!(is_authorized_after, false);
+}

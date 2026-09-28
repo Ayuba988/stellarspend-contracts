@@ -1,21 +1,26 @@
 use soroban_sdk::{contracttype, Address, Symbol};
 
-/// Global contract configuration.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Global configuration for the contract.
+///
+/// The administrator is stored as part of the contract configuration so that
+/// future administrative functionality can be added without changing the
+/// configuration structure.
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Config {
-    /// Contract administrator. Not required for any deposit/withdraw
-    /// operation today; kept for parity with the rest of the StellarSpend
-    /// contracts and as a hook for future admin-gated functionality.
+    /// Address of the contract administrator.
     pub admin: Address,
 }
 
-/// Storage keys used by this contract.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// Persistent storage keys used by the contract.
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     /// Key for the contract's singleton [`Config`] record.
     Config,
-    /// Balance for a given (user, asset) pair.
+
+    /// Balance associated with a specific user and asset.
+    ///
+    /// Each `(Address, Symbol)` pair maintains an independent balance.
     Balance(Address, Symbol),
 }

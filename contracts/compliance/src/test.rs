@@ -29,3 +29,34 @@ mod tests {
         assert_eq!(i128::MAX.checked_add(1), None);
     }
 }
+
+
+#![cfg(test)]
+
+use super::*;
+use soroban_sdk::{Env, Address};
+
+#[test]
+fn test_compliance_check_allowed_and_blocked_addresses() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // Register compliance contract
+    let contract_id = env.register(ComplianceContract, ());
+    let client = ComplianceContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let allowed_user = Address::generate(&env);
+    let blocked_user = Address::generate(&env);
+
+    // Initialize compliance module
+    client.initialize(&admin);
+
+    // Set status: allow one user, block the other
+    client.set_status(&allowed_user, &true);
+    client.set_status(&blocked_user, &false);
+
+    // Assert compliance check results
+    assert_eq!(client.is_compliant(&allowed_user), true);
+    assert_eq!(client.is_compliant(&blocked_user), false);
+}

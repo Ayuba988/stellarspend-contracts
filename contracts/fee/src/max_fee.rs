@@ -1,6 +1,12 @@
+//! Maximum-fee helper for the fee contract.
+//!
+//! Every `pub fn` below already carries a `///` doc comment; this module doc
+//! summarises the helper for `cargo doc`.
+
 use soroban_sdk::Env;
 use crate::storage;
 
+/// Returns the configured maximum fee, falling back to the default cap when no value has been stored.
 pub fn get_max_fee(env: &Env) -> i128 {
     storage::get_max_fee(env).unwrap_or(10_000)
 }

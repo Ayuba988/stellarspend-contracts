@@ -1,3 +1,8 @@
+//! Compares stored fee-accounting balances against independently
+//! calculated/on-chain balances to surface discrepancies. Every `pub fn`
+//! below already carries a `///` doc comment; this module doc summarizes
+//! the file as a whole for `cargo doc`.
+
 use soroban_sdk::{contracttype, Env, token};
 
 use crate::storage::{read_escrow_balance, read_total_collected, read_total_released, read_token, read_treasury};
@@ -11,9 +16,11 @@ pub struct ReconciliationResult {
     pub is_reconciled: bool,
 }
 
-/// Compare the stored escrow balance against the calculated balance
-/// (total_collected - total_released). Returns a result describing any
-/// discrepancy between the two values.
+/// Reconciles fee accounting by comparing the stored escrow balance with the
+/// balance calculated from total collected fees minus total released fees.
+///
+/// The result reports both balances, their discrepancy, and whether the stored
+/// value matches the calculated accounting state.
 pub fn reconcile(env: &Env) -> ReconciliationResult {
     let stored_balance = read_escrow_balance(env);
     let total_collected = read_total_collected(env);

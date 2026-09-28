@@ -1,3 +1,16 @@
+//! # Compliance contract
+//!
+//! Minimal Soroban contract that stores an administrator and a single
+//! configuration value, plus the shared types, storage helpers and validation
+//! used across the StellarSpend compliance contracts.
+//!
+//! The contract exposes a small surface: `Contract::initialize` writes the
+//! configuration once, `Contract::set_value` updates it behind a
+//! `require_auth` check, and `Contract::get_value` reads it back. The chain is
+//! the source of truth for that configuration. Every public type, error variant
+//! and function in this crate is documented so `cargo doc -p compliance` builds
+//! without warnings.
+
 #![no_std]
 
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
@@ -5,10 +18,12 @@ use soroban_sdk::{contract, contracterror, contractimpl, Address, Env};
 mod storage;
 #[cfg(test)]
 mod test;
+/// Shared configuration types used by the compliance contract.
 pub mod types;
+/// Input-validation helpers used by the compliance contract.
 pub mod validation;
 
-/// Typed errors for the compliance contract.
+/// Typed errors returned by the compliance contract.
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -20,12 +35,24 @@ pub enum Error {
     InvalidAmount = 3,
 }
 
+/// The compliance contract entry point.
+///
+/// Holds no state of its own: the administrator and the configured value live
+/// in the contract's instance storage, and every state-changing method requires
+/// the stored administrator to authorize the call.
 #[contract]
 pub struct Contract;
 
 #[contractimpl]
 impl Contract {
-    /// Initializes the contract with an administrator.
+    /// Initializes the contract with the given administrator.
+    ///
+    /// The administrator must authenticate the initialization request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AlreadyInitialized`] if the contract has already
+    /// been initialized.
     pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
         if storage::read_config(&env).is_some() {
             return Err(Error::AlreadyInitialized);
@@ -35,7 +62,17 @@ impl Contract {
         Ok(())
     }
 
-    /// Updates the contract value after authenticating the administrator.
+    /// Updates the configured value for the contract.
+    ///
+    /// The provided administrator must authenticate the request and must
+    /// match the administrator stored in the contract configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidAmount`] if `value` is negative.
+    ///
+    /// Returns [`Error::Unauthorized`] if the contract has not been
+    /// initialized or if `admin` is not the configured administrator.
     pub fn set_value(env: Env, admin: Address, value: i128) -> Result<(), Error> {
         admin.require_auth();
         if value < 0 {
@@ -49,7 +86,9 @@ impl Contract {
         Ok(())
     }
 
-    /// Returns the current configured value.
+    /// Returns the currently configured contract value.
+    ///
+    /// Returns `0` when the contract has not been initialized.
     pub fn get_value(env: Env) -> i128 {
         storage::read_config(&env).map(|c| c.value).unwrap_or(0)
     }

@@ -1,5 +1,9 @@
 #![no_std]
 
+//! Rewards contract: admin-gated configuration plus shared tiered-rate reward
+//! calculation. Every `pub fn` below already carries a `///` doc comment; this
+//! module doc summarises the contract for `cargo doc`.
+
 extern crate alloc;
 
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env, Vec};
@@ -22,6 +26,7 @@ pub enum Error {
     InvalidAmount = 3,
 }
 
+/// Rewards contract entrypoint.
 #[contract]
 pub struct Contract;
 

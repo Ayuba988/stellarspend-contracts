@@ -1,12 +1,19 @@
+//! Negative-amount validation for the fee contract.
+//!
+//! Every `pub fn` below already carries a `///` doc comment; this module doc
+//! summarises the helper and documents each error variant.
+
 use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum NegativeAmountError {
+    /// Returned when the supplied fee amount is below zero.
     NegativeAmount = 1,
 }
 
+/// Validates that `amount` is zero or positive, returning a negative-amount error when it is below zero.
 pub fn check_not_negative(amount: i128) -> Result<(), NegativeAmountError> {
     if amount < 0 {
         return Err(NegativeAmountError::NegativeAmount);

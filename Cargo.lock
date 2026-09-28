@@ -216,6 +216,7 @@ dependencies = [
 name = "batch_rewards"
 version = "0.1.0"
 dependencies = [
+ "delegation",
  "shared",
  "soroban-sdk",
 ]
@@ -1291,6 +1292,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
+]
+
+[[package]]
+name = "refunds"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]

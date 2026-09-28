@@ -93,7 +93,6 @@ mod tests {
         client.initialize(&admin);
         let user = Address::generate(&env);
         let xlm = asset(&env);
-        client.set_limit(&user, &xlm, &100, &weekly(&env));
 
         // NOTE: mock_all_auths is still active for this test because it was
         // called above and cannot be un-called. The auth check in record_spend
@@ -236,5 +235,17 @@ mod tests {
         let (_, client, admin) = setup();
         let result = client.try_initialize(&admin);
         assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+    }
+
+    #[test]
+    fn set_limit_record_spend_verify_remaining() {
+        let (env, client, _admin) = setup();
+        let user = Address::generate(&env);
+        let xlm = asset(&env);
+
+        client.set_limit(&user, &xlm, &100, &daily(&env));
+        client.record_spend(&user, &xlm, &30);
+
+        assert_eq!(client.get_remaining(&user, &xlm), 70);
     }
 }

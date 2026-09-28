@@ -1,5 +1,9 @@
 #![no_std]
 
+//! Savings contract: internal accounting for per-user, per-asset savings
+//! balances. Every `pub fn` below already carries a `///` doc comment; this
+//! module doc summarises the contract for `cargo doc`.
+
 use soroban_sdk::{contract, contracterror, contractimpl, Address, Env, Symbol};
 
 mod storage;
@@ -22,6 +26,7 @@ pub enum Error {
     InsufficientBalance = 4,
 }
 
+/// Savings contract entrypoint.
 #[contract]
 pub struct Contract;
 

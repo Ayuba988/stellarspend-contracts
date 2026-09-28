@@ -1,10 +1,17 @@
+//! Shared validation and formatting helpers for StellarSpend contracts.
+//!
+//! Provides amount/address validation, storage counter helpers and a
+//! deterministic transaction-reference generator reused across contracts.
+
 use alloc::format;
 use soroban_sdk::{Env, String, Symbol};
 
 /// Shared validation errors for simple reusable helpers.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ValidationError {
+    /// The supplied amount was negative and therefore rejected.
     NegativeAmount,
+    /// The supplied address did not match the expected Stellar format.
     InvalidAddress,
 }
 

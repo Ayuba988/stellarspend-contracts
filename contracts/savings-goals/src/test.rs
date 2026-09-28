@@ -385,4 +385,26 @@ mod tests {
         let result = client.try_initialize(&admin);
         assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
     }
+
+    #[test]
+    fn create_goal_and_contribute_updates_balance() {
+        let env = Env::default();
+        let (client, _admin, user) = setup(&env);
+        let asset = xlm(&env);
+
+        let goal_id = client.create_goal(
+            &user,
+            &Symbol::new(&env, "vacation"),
+            &1000_i128,
+            &asset,
+            &2_000_000_000_u64,
+        );
+
+        client.contribute(&user, &goal_id, &250_i128);
+        client.contribute(&user, &goal_id, &250_i128);
+
+        let goal = client.get_goal(&user, &goal_id);
+        assert_eq!(goal.current_amount, 500);
+        assert!(!goal.is_complete);
+    }
 }

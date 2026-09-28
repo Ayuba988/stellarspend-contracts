@@ -1,4 +1,8 @@
 //! Authorization helpers for configurable contract allow-lists.
+//!
+//! The allow-list lives in persistent contract storage keyed by the caller's
+//! own `DataKey` enum, so contracts can gate cross-contract calls without
+//! duplicating membership checks.
 
 use soroban_sdk::{Env, IntoVal, Val};
 

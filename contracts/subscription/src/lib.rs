@@ -20,6 +20,8 @@ pub enum Error {
     InvalidAmount = 3,
 }
 
+/// Subscription contract entrypoint: manages recurring subscription
+/// configuration for StellarSpend users.
 #[contract]
 pub struct Contract;
 

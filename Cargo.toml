@@ -35,6 +35,7 @@ members = [
   "contracts/notification",
   "contracts/cross-contract",
   "contracts/activity-feed",
+  "contracts/lms",
   "contracts/zk-verifier",
   "contracts/refunds",
   "contracts/rag",

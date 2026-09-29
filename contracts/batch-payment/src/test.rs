@@ -1,31 +1,51 @@
+
 #[cfg(test)]
 mod tests {
-    use soroban_sdk::testutils::{Address as _, Ledger};
-    use soroban_sdk::Env;
+    use soroban_sdk::{
+        testutils::{Address as _, Ledger},
+        Address, Env,
+    };
 
     #[test]
-    fn happy_path_environment() {
+    fn should_set_and_read_ledger_sequence() {
         let env = Env::default();
+
         env.ledger().set_sequence_number(1);
+
         assert_eq!(env.ledger().sequence(), 1);
     }
+
     #[test]
-    fn unauthorized_boundary_placeholder() {
+    fn should_support_mocked_authentication() {
         let env = Env::default();
+
         env.mock_all_auths();
-        assert!(env.ledger().timestamp() >= 0);
+
+        // Authentication is mocked for subsequent contract calls.
+        // This test mainly verifies that the test environment accepts
+        // the mocked-auth configuration.
+        assert_eq!(env.ledger().sequence(), 0);
     }
+
     #[test]
-    fn address_generation() {
+    fn should_generate_unique_addresses() {
         let env = Env::default();
-        let _ = soroban_sdk::Address::generate(&env);
+
+        let first = Address::generate(&env);
+        let second = Address::generate(&env);
+
+        assert_ne!(first, second);
     }
+
     #[test]
-    fn zero_boundary() {
+    fn should_handle_zero_boundary() {
         assert_eq!(0_i128.checked_add(0), Some(0));
+        assert_eq!(0_i128.checked_sub(0), Some(0));
     }
+
     #[test]
-    fn overflow_boundary() {
+    fn should_detect_integer_overflow() {
         assert_eq!(i128::MAX.checked_add(1), None);
+        assert_eq!(i128::MIN.checked_sub(1), None);
     }
 }

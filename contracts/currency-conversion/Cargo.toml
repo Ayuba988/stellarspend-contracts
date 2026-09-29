@@ -1,5 +1,5 @@
 [package]
-name = "currency_conversion"
+name = "currency-conversion"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

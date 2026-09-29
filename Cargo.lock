@@ -396,7 +396,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "currency_conversion"
+name = "currency-conversion"
 version = "0.1.0"
 dependencies = [
  "shared",
@@ -692,7 +692,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "escrow_v2"
+name = "escrow-v2"
 version = "0.1.0"
 dependencies = [
  "shared",

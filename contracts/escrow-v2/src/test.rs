@@ -28,4 +28,24 @@ mod tests {
     fn overflow_boundary() {
         assert_eq!(i128::MAX.checked_add(1), None);
     }
+
+    #[test]
+    fn escrow_state_transitions_from_uninitialized_to_updated() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register(crate::Contract, ());
+        let client = crate::ContractClient::new(&env, &contract_id);
+        let admin = soroban_sdk::Address::generate(&env);
+
+        assert_eq!(client.get_value(), 0);
+        client.initialize(&admin);
+        assert_eq!(client.get_value(), 0);
+
+        client.set_value(&admin, &250_i128);
+        assert_eq!(client.get_value(), 250);
+
+        client.set_value(&admin, &75_i128);
+        assert_eq!(client.get_value(), 75);
+    }
 }
